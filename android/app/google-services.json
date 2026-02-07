@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "180786396234",
+    "project_id": "greenliving-presence",
+    "storage_bucket": "greenliving-presence.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:180786396234:android:558c72de95093ecff3bab3",
+        "android_client_info": {
+          "package_name": "com.example.absensi_greenliving"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDDOA4Gm-wkHbBjk9Rgm9z3Stnb21l4Lmk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
