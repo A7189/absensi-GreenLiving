@@ -10,6 +10,7 @@ import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:connectivity_plus/connectivity_plus.dart'; // Import connectivity_plus
 
 class AttendanceController extends GetxController {
   final DatabaseService _dbService = DatabaseService();
@@ -33,14 +34,34 @@ class AttendanceController extends GetxController {
   String? currentDocId; 
   DateTime? checkInTime; 
 
+  // Offline Status
+  var isOffline = false.obs;
+
   StreamSubscription<Position>? _positionStream;
+  StreamSubscription<List<ConnectivityResult>>? _connectivityStream;
 
   @override
   void onInit() {
     super.onInit();
     _initSystem();
+    _initConnectivity(); // Initialize connectivity listener
     _auth.authStateChanges().listen((User? user) {
       if (user != null) {
+        checkDailyStatus();
+      }
+    });
+  }
+
+  // Initialize connectivity listener
+  void _initConnectivity() {
+    _connectivityStream = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      // If results contain 'none', it means offline
+      isOffline.value = results.contains(ConnectivityResult.none);
+      
+      if (isOffline.value) {
+        Get.snackbar("Koneksi Hilang", "Anda sedang offline", backgroundColor: Colors.grey, colorText: Colors.white);
+      } else {
+        // If back online, check daily status again
         checkDailyStatus();
       }
     });
@@ -59,6 +80,8 @@ class AttendanceController extends GetxController {
   }
 
   Future<void> checkDailyStatus() async {
+    if (isOffline.value) return; // Skip if offline
+
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
@@ -67,7 +90,7 @@ class AttendanceController extends GetxController {
       String todayDocId = DateFormat('yyyy-MM-dd').format(now);
 
       QuerySnapshot snapshot = await _firestore.collection('attendance_logs')
-          .where('userId', isEqualTo: uid) // Pastikan field sesuai DB (userId/uid)
+          .where('userId', isEqualTo: uid) 
           .where('date', isEqualTo: todayDocId)
           .limit(1)
           .get();
@@ -95,7 +118,12 @@ class AttendanceController extends GetxController {
   }
 
   Future<void> submitAttendance(UserModel user, ShiftModel? shift) async {
-    
+    // Check offline status first
+    if (isOffline.value) {
+      Get.snackbar("Offline", "Koneksi internet tidak tersedia.");
+      return;
+    }
+
     // 1. VALIDASI SHIFT
     if (shift == null) {
        Get.snackbar("Jadwal Kosong", "Hari ini Anda tidak memiliki jadwal shift (Libur).");
@@ -129,8 +157,8 @@ class AttendanceController extends GetxController {
           }
 
           DocumentReference docRef = await _firestore.collection('attendance_logs').add({
-            'userId': user.uid, // Samakan field dengan checkDailyStatus
-            'uid': user.uid,    // Backup field
+            'userId': user.uid, 
+            'uid': user.uid,    
             'date': DateFormat('yyyy-MM-dd').format(now),
             'checkInTime': now, 
             'checkIn': now, 
@@ -232,5 +260,10 @@ class AttendanceController extends GetxController {
     });
   }
   
-  @override void onClose() { _positionStream?.cancel(); super.onClose(); }
+  @override 
+  void onClose() { 
+    _positionStream?.cancel(); 
+    _connectivityStream?.cancel(); // Cancel connectivity listener
+    super.onClose(); 
+  }
 }
