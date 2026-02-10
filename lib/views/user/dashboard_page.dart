@@ -47,6 +47,7 @@ class DashboardPage extends StatelessWidget {
 
                           // --- KARTU STATUS ABSEN ---
                           Obx(() {
+                            // Kalau sudah CheckOut (Selesai hari ini)
                             if (attController.currentStatus.value == 'checkOut') {
                               return Container(
                                 width: double.infinity,
@@ -72,17 +73,18 @@ class DashboardPage extends StatelessWidget {
                                 ),
                               );
                             }
-                            // TAMPILKAN KARTU TOMBOL
-                            return _buildAttendanceCard(attController);
+                            // TAMPILKAN KARTU TOMBOL (LOGIC BARU)
+                            return _buildAttendanceCard(attController, dashController);
                           }),
                           
                           const SizedBox(height: 20),
                           
-                          // --- WIDGET TANGGAL & LOKASI ---
+                          // --- WIDGET TANGGAL & LOKASI (ADA LOADINGNYA) ---
                           Obx(() => _buildDateAndWeekStatus(attController, dashController)),
                           
                           const SizedBox(height: 20),
                           
+                          // --- STATISTIK LINGKARAN (TIMER & CUTI) ---
                           _buildCircularStats(dashController),
                           
                           const SizedBox(height: 20),
@@ -101,85 +103,113 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  // --- 🔥 LOGIC BARU: TOMBOL ABSEN ---
-  Widget _buildAttendanceCard(AttendanceController controller) {
-    bool isCheckIn = controller.currentStatus.value == 'pending';
-    
-    String title = isCheckIn ? 'Absen Masuk' : 'Absen Pulang';
-    String subtitle = isCheckIn ? 'Silakan tap tombol di bawah untuk masuk' : 'Silakan tap tombol di bawah untuk pulang';
-    Color iconColor = isCheckIn ? const Color(0xFFE57373) : Colors.orange;
+  // --- 🔥 LOGIC BARU: TOMBOL ABSEN PINTAR (BISA DIKUNCI) ---
+  Widget _buildAttendanceCard(AttendanceController controller, DashboardController dashController) {
+    return Obx(() {
+      bool isCheckIn = controller.currentStatus.value == 'pending';
+      
+      // 🔥 Logic Kunci: Kalau Libur DAN Belum Absen = Terkunci
+      bool isLibur = dashController.isTodayHoliday.value; 
+      bool isLocked = isLibur && isCheckIn;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () async {
-          if (controller.isLoading.value) return;
+      String title;
+      String subtitle;
+      Color iconColor;
+      Color bgCardColor = Colors.white;
 
-          User? firebaseUser = FirebaseAuth.instance.currentUser;
-          if (firebaseUser == null) return;
-          
-          // 1. Siapkan Data User
-          UserModel currentUser = UserModel(
-            uid: firebaseUser.uid,
-            name: firebaseUser.displayName ?? "Satpam",
-            email: firebaseUser.email ?? "no-email",
-            role: "security",
-            joinDate: DateTime.now(),
-            officeLat: controller.officeLat.value, 
-            officeLng: controller.officeLng.value, 
-          );
+      if (isLocked) {
+        title = "Hari Ini Libur";
+        subtitle = "Tidak ada jadwal shift hari ini.";
+        iconColor = Colors.grey;
+        bgCardColor = Colors.grey.shade100;
+      } else {
+        title = isCheckIn ? 'Absen Masuk' : 'Absen Pulang';
+        subtitle = isCheckIn 
+            ? 'Silakan tap tombol di bawah untuk masuk' 
+            : 'Silakan tap tombol di bawah untuk pulang';
+        iconColor = isCheckIn ? const Color(0xFFE57373) : Colors.orange;
+      }
 
-          // 🔥 2. TARIK DATA SHIFT DARI DB (UPDATE LOGIC)
-          final db = DatabaseService();
-          
-          // Pakai getTodayShift (baca dari shift_schedule root)
-          ShiftModel? todayShift = await db.getTodayShift(currentUser.uid);
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          // 🔥 Matikan fungsi onTap kalau Locked atau Loading
+          onTap: (controller.isLoading.value || isLocked)
+            ? null 
+            : () async {
+                if (controller.isLoading.value) return;
 
-          // 3. Kirim ke Controller
-          // Controller akan validasi: Libur? Telat? Pulang Cepat?
-          await controller.submitAttendance(currentUser, todayShift);
-        },
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 15,
-                offset: const Offset(0, 8),
-              )
-            ],
-          ),
-          child: Row(
-            children: [
-              Obx(() => controller.isLoading.value 
-                ? const SizedBox(width: 30, height: 30, child: CircularProgressIndicator())
-                : Icon(Icons.touch_app_rounded, color: iconColor, size: 30)
-              ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 15),
+                User? firebaseUser = FirebaseAuth.instance.currentUser;
+                if (firebaseUser == null) return;
+                
+                // 1. Siapkan Data User
+                UserModel currentUser = UserModel(
+                  uid: firebaseUser.uid,
+                  name: firebaseUser.displayName ?? "Satpam",
+                  email: firebaseUser.email ?? "no-email",
+                  role: "security",
+                  joinDate: DateTime.now(),
+                  officeLat: controller.officeLat.value, 
+                  officeLng: controller.officeLng.value, 
+                );
+
+                // 🔥 2. TARIK DATA SHIFT DARI DB (METODE BARU)
+                final db = DatabaseService();
+                ShiftModel? todayShift = await db.getTodayShift(currentUser.uid);
+
+                // 3. Kirim ke Controller (Controller validasi Libur/Telat)
+                await controller.submitAttendance(currentUser, todayShift);
+              },
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: bgCardColor,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                )
+              ],
+            ),
+            child: Row(
+              children: [
+                // Icon Loading / Gembok / Jari
+                controller.isLoading.value 
+                  ? const SizedBox(width: 30, height: 30, child: CircularProgressIndicator())
+                  : Icon(
+                      isLocked ? Icons.block_rounded : Icons.touch_app_rounded, 
+                      color: iconColor, 
+                      size: 30
                     ),
-                    Text(
-                      subtitle, 
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                  ],
+                const SizedBox(width: 15),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold, 
+                          color: isLocked ? Colors.grey : Colors.black87, 
+                          fontSize: 15
+                        ),
+                      ),
+                      Text(
+                        subtitle, 
+                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   // --- LOGIC LINGKARAN CUTI & JAM ---
@@ -198,7 +228,7 @@ class DashboardPage extends StatelessWidget {
             controller.presencePercentage.value
           )),
           
-          // 2. CUTI
+          // 2. CUTI (DATA REAL TAHUNAN)
           Obx(() => _buildProgressCircle(
             "${controller.cutiCount.value}", 
             'Cuti', 
@@ -206,7 +236,7 @@ class DashboardPage extends StatelessWidget {
             (controller.cutiCount.value / 12) 
           )),
           
-          // 3. JAM KERJA (TIMER)
+          // 3. JAM KERJA (TIMER MUNDUR REAL)
           Obx(() => _buildProgressCircle(
             "${controller.remainingShiftHours.value}", 
             'Jam Kerja', 
@@ -217,8 +247,6 @@ class DashboardPage extends StatelessWidget {
       ),
     );
   }
-
-  // --- WIDGET LAIN TETAP SAMA ---
 
   Widget _buildDateAndWeekStatus(AttendanceController attCtrl, DashboardController dashCtrl) {
     final now = DateTime.now();
@@ -281,9 +309,13 @@ class DashboardPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10), 
+              
+          
               Obx(() {
                 double dist = attCtrl.currentDistance.value;
                 bool isNear = attCtrl.isWithinRadius.value;
+                bool isLoadingLoc = attCtrl.isLocationLoading.value; // Cek status loading
+
                 String distanceText = dist > 1000 
                     ? "${(dist/1000).toStringAsFixed(1)} km"
                     : "${dist.toInt()} m";
@@ -302,7 +334,9 @@ class DashboardPage extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        isNear ? Icons.verified_user_rounded : Icons.location_off_rounded, 
+                        isLoadingLoc 
+                          ? Icons.location_searching_rounded // Icon nyari sinyal
+                          : (isNear ? Icons.verified_user_rounded : Icons.location_off_rounded), 
                         size: 26, 
                         color: isNear ? Colors.green[700] : Colors.red[400]
                       ),
@@ -310,17 +344,28 @@ class DashboardPage extends StatelessWidget {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            distanceText,
-                            style: GoogleFonts.poppins(
-                              fontSize: 16, 
-                              color: isNear ? Colors.green[800] : Colors.red[600],
-                              fontWeight: FontWeight.w800,
-                              height: 1.0
+                          // 🔥 LOGIC: TAMPILKAN SPINNER ATAU JARAK
+                          if (isLoadingLoc)
+                            SizedBox(
+                              width: 15, height: 15, 
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2, 
+                                color: isNear ? Colors.green[800] : Colors.red[600]
+                              )
+                            )
+                          else
+                            Text(
+                              distanceText,
+                              style: GoogleFonts.poppins(
+                                fontSize: 16, 
+                                color: isNear ? Colors.green[800] : Colors.red[600],
+                                fontWeight: FontWeight.w800,
+                                height: 1.0
+                              ),
                             ),
-                          ),
+                          
                           Text(
-                            "dari Pos",
+                            isLoadingLoc ? "Mencari..." : "dari Pos",
                             style: GoogleFonts.poppins(
                               fontSize: 10, 
                               color: isNear ? Colors.green[800] : Colors.red[600],

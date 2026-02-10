@@ -12,10 +12,20 @@ class ExcelController extends GetxController {
 
   var isExporting = false.obs; 
 
+  // 🔥 STATE TANGGAL (DEFAULT: BULAN INI)
+  var startDate = DateTime(DateTime.now().year, DateTime.now().month, 1).obs;
+  var endDate = DateTime.now().obs;
+
+  // Fungsi Update Tanggal dari UI
+  void updateDateRange(DateTime start, DateTime end) {
+    startDate.value = start;
+    endDate.value = end;
+  }
+
   // ========================================================
-  // 🔥 FUNGSI UTAMA: DOWNLOAD REKAP (MATRIX)
+  // 🔥 FUNGSI UTAMA: DOWNLOAD CUSTOM RANGE
   // ========================================================
-  void downloadMonthlyRecap() async {
+  void downloadReport() async {
     try {
       isExporting.value = true;
       
@@ -24,20 +34,29 @@ class ExcelController extends GetxController {
         barrierDismissible: false
       );
 
-      DateTime now = DateTime.now();
-      String monthName = DateFormat('MMMM_yyyy', 'id_ID').format(now);
+      // 1. Ambil Tanggal dari State
+      DateTime start = startDate.value;
+      DateTime end = endDate.value; // Ambil jam 00:00
       
-      DateTime start = DateTime(now.year, now.month, 1);
-      DateTime end = DateTime(now.year, now.month + 1, 0);
+      // Fix End Date: Set ke jam 23:59:59 biar data hari terakhir keambil semua
+      DateTime endFullDay = DateTime(end.year, end.month, end.day, 23, 59, 59);
+
       String startStr = DateFormat('yyyy-MM-dd').format(start);
       String endStr = DateFormat('yyyy-MM-dd').format(end);
+      
+      // Nama File & Judul Laporan
+      String reportTitle = "Laporan_${DateFormat('dd MMM').format(start)}-${DateFormat('dd MMM yyyy').format(end)}";
 
       // --- BELANJA DATA ---
       var futureEmployees = _db.getAllEmployees();
+      
+      // Ambil Jadwal di Range
       var futureSchedule = FirebaseFirestore.instance.collection('shift_schedule')
           .where('date', isGreaterThanOrEqualTo: startStr)
           .where('date', isLessThanOrEqualTo: endStr)
           .get();
+          
+      // Ambil Absen di Range
       var futureAttendance = FirebaseFirestore.instance.collection('attendance')
           .where('date', isGreaterThanOrEqualTo: startStr)
           .where('date', isLessThanOrEqualTo: endStr)
@@ -92,20 +111,19 @@ class ExcelController extends GetxController {
       Get.back(); // Tutup Loading
       
       await _excelService.exportAttendanceMatrix(
-        monthName, 
+        reportTitle, // Nama File Custom
         employees, 
         finalMap,
         start,
-        end
+        endFullDay // Kirim end date yg udah dipolin jamnya
       );
 
-      // 🔥 FIX: BALIKIN KE ATAS (TOP)
       Get.snackbar(
         "Berhasil", 
-        "Laporan $monthName telah didownload! 📂",
+        "Laporan berhasil didownload! 📂",
         backgroundColor: Colors.green,
         colorText: Colors.white,
-        snackPosition: SnackPosition.TOP, // <--- UDAH SAYA PINDAH KE ATAS
+        snackPosition: SnackPosition.TOP,
         margin: const EdgeInsets.all(20)
       );
 

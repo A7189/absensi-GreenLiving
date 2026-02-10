@@ -275,11 +275,10 @@ class AdminDashboardPage extends StatelessWidget {
     );
   }
 
-  // --- WIDGET GRID MENU ---
-  // 🔥 Ditambah parameter excelCtrl
+
   Widget _buildPremiumGrid(Color primaryColor, AdminDashboardController controller, ExcelController excelCtrl) {
     
-    // LOGIC PERIZINAN
+
     int pending = controller.pendingCount.value;
     bool hasPending = pending > 0;
     
@@ -296,8 +295,7 @@ class AdminDashboardPage extends StatelessWidget {
         'subtitle': 'To Excel',
         'icon': Icons.data_array_rounded,
         'isAlert': false,
-        // 🔥 PANGGIL CONTROLLER EXCEL YANG BARU
-        'onTap': () => excelCtrl.downloadMonthlyRecap(), 
+        'onTap': () => Get.toNamed(Routes.ADMIN_EXCEL),
       },
       {
         'title': 'Riwayat',

@@ -11,7 +11,7 @@ class LeaveRequestPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Controller tetap dipanggil di sini biar data ke-load
+    // Controller dipanggil di sini. Kalau udah ada dia pake yg lama, kalo belum dia buat baru.
     final controller = Get.put(LeaveController());
 
     return Scaffold(
@@ -30,36 +30,52 @@ class LeaveRequestPage extends StatelessWidget {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           // Arahkan ke Halaman Form
-          Get.toNamed(Routes.ADD_LEAVE, arguments: controller.myLeaves.length.toString()); 
+          Get.toNamed(Routes.ADD_LEAVE); 
         },
         backgroundColor: const Color(0xFF1B5E20),
         icon: const Icon(Icons.add, color: Colors.white),
         label: Text("Buat Izin", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
 
-      body: Obx(() {
-        if (controller.myLeaves.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+      // 🔥 BUNGKUS DENGAN REFRESH INDICATOR BIAR BISA TARIK LAYAR
+      body: RefreshIndicator(
+        color: const Color(0xFF1B5E20),
+        onRefresh: () async {
+          // Trigger fetch ulang manual (sebenernya snapshots udah realtime, tapi buat jaga2)
+          controller.fetchMyLeaves(); 
+        },
+        child: Obx(() {
+          if (controller.myLeaves.isEmpty) {
+            // Pake ListView biar tetep bisa di-scroll buat refresh walau kosong
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
               children: [
-                Icon(Icons.history_toggle_off, size: 80, color: Colors.grey[300]),
-                const SizedBox(height: 10),
-                Text("Belum ada riwayat izin", style: GoogleFonts.poppins(color: Colors.grey, fontSize: 16)),
+                SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.history_toggle_off, size: 80, color: Colors.grey[300]),
+                      const SizedBox(height: 10),
+                      Text("Belum ada riwayat izin", style: GoogleFonts.poppins(color: Colors.grey, fontSize: 16)),
+                    ],
+                  ),
+                ),
               ],
-            ),
-          );
-        }
+            );
+          }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(20),
-          itemCount: controller.myLeaves.length,
-          itemBuilder: (context, index) {
-            var data = controller.myLeaves[index].data() as Map<String, dynamic>;
-            return _buildHistoryCard(data);
-          },
-        );
-      }),
+          return ListView.builder(
+            padding: const EdgeInsets.all(20),
+            physics: const AlwaysScrollableScrollPhysics(), // Wajib biar smooth scroll
+            itemCount: controller.myLeaves.length,
+            itemBuilder: (context, index) {
+              var data = controller.myLeaves[index].data() as Map<String, dynamic>;
+              return _buildHistoryCard(data);
+            },
+          );
+        }),
+      ),
     );
   }
 

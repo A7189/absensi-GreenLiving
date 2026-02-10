@@ -1,6 +1,7 @@
 
 import 'package:absensi_greenliving/views/admin/admin_dashboard_page.dart';
 import 'package:absensi_greenliving/views/admin/admin_employe_page.dart';
+import 'package:absensi_greenliving/views/admin/admin_excel_page.dart';
 import 'package:absensi_greenliving/views/admin/admin_history_page.dart';
 import 'package:absensi_greenliving/views/admin/admin_leave_approval.dart';
 import 'package:absensi_greenliving/views/admin/admin_livemonitoring_page.dart';
@@ -16,8 +17,7 @@ import 'package:absensi_greenliving/views/user/leave_request_page.dart';
 import 'package:absensi_greenliving/views/user/schedule_page.dart';
 import 'package:get/get.dart';
 import 'app_routes.dart';
-
-import '../views/main_wrapper.dart'; // IMPORT INI JANGAN SAMPAI LOLOS
+import '../views/main_wrapper.dart';
 
 class AppPages {
   static final routes = [
@@ -107,6 +107,11 @@ class AppPages {
       GetPage(
       name: Routes.ADD_LEAVE,
       page: () => const AddLeavePage(),
+      transition: Transition.fadeIn,
+    ),
+      GetPage(
+      name: Routes.ADMIN_EXCEL,
+      page: () => const AdminExcelPage(),
       transition: Transition.fadeIn,
     ),
   ];

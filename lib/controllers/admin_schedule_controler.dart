@@ -37,7 +37,6 @@ class AdminScheduleController extends GetxController {
     try {
       employees.value = await _db.getAllEmployees();
       
-      // Auto pilih user pertama kalau belum ada yang dipilih
       if (employees.isNotEmpty && selectedUser.value == null) {
         selectUser(employees[0]);
       }
@@ -48,7 +47,7 @@ class AdminScheduleController extends GetxController {
     }
   }
 
-  // --- 2. AMBIL MASTER SHIFT (JAM KERJA) ---
+  // --- 2. AMBIL MASTER SHIFT ---
   void fetchMasterShifts() async {
     try {
       var snapshot = await _firestore.collection('shifts').get();
@@ -71,8 +70,8 @@ class AdminScheduleController extends GetxController {
     fetchShiftsForSelectedUser(); 
   }
 
-  // --- 4. TARIK JADWAL USER TERPILIH ---
-  void fetchShiftsForSelectedUser() async {
+  // --- 4. TARIK JADWAL USER ---
+  Future<void> fetchShiftsForSelectedUser() async {
     if (selectedUser.value == null) return;
 
     try {
@@ -81,7 +80,7 @@ class AdminScheduleController extends GetxController {
       String uid = selectedUser.value!.uid;
       DateTime date = currentMonth.value;
       
-      // Hitung Range Tanggal Bulan Ini
+      // Ambil Range Tanggal (Tgl 1 - Akhir Bulan)
       DateTime start = DateTime(date.year, date.month, 1);
       DateTime end = DateTime(date.year, date.month + 1, 0);
       
@@ -94,7 +93,6 @@ class AdminScheduleController extends GetxController {
           .where('date', isLessThanOrEqualTo: endStr)
           .get();
 
-      // Reset map lokal sebelum diisi ulang untuk bulan yang baru
       userShifts.clear();
 
       for (var doc in query.docs) {
@@ -103,8 +101,7 @@ class AdminScheduleController extends GetxController {
           userShifts[data['date']] = data['shiftId'];
         }
       }
-      
-      userShifts.refresh();
+      userShifts.refresh(); 
 
     } catch (e) {
       print("Error fetch jadwal: $e");
@@ -113,7 +110,7 @@ class AdminScheduleController extends GetxController {
     }
   }
 
-  // --- [NEW] NAVIGASI BULAN ---
+  // --- NAVIGASI BULAN ---
   void changeMonth(int offset) {
     DateTime newDate = DateTime(currentMonth.value.year, currentMonth.value.month + offset);
     currentMonth.value = newDate;
@@ -125,75 +122,103 @@ class AdminScheduleController extends GetxController {
     fetchShiftsForSelectedUser();
   }
 
-  // --- 5. UPDATE MANUAL (KLIK TANGGAL) ---
+  // --- 5. UPDATE MANUAL SATUAN ---
   void updateSingleShift(DateTime date, String type) async {
     if (selectedUser.value == null) return;
     try {
       String uid = selectedUser.value!.uid;
       String dateStr = DateFormat('yyyy-MM-dd').format(date);
       
-      userShifts[dateStr] = type; 
+      // Update tampilan langsung (Optimistic)
+      userShifts[dateStr] = type;
+      userShifts.refresh();
       
-      await _firestore.collection('shift_schedule').doc("$uid-$dateStr").set({
-        'uid': uid, 
-        'date': dateStr, 
-        'shiftId': type, 
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      DocumentReference docRef = _firestore.collection('shift_schedule').doc("$uid-$dateStr");
+      
+      if (type == 'Libur') {
+         await docRef.delete(); // Kalo libur hapus doc
+      } else {
+         await docRef.set({
+          'uid': uid, 
+          'date': dateStr, 
+          'shiftId': type, 
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
     } catch (e) { 
-      fetchShiftsForSelectedUser(); 
+      fetchShiftsForSelectedUser(); // Revert kalo gagal
     }
   }
 
-  // --- 6. GENERATE OTOMATIS (AUTO POLA) [UPDATED] ---
+  // --- 6. GENERATE OTOMATIS (POLA BARU: MALAM-MALAM-SIANG-SIANG-PAGI-PAGI-LIBUR) ---
   void executeGenerate({required String startShiftId, required DateTime startDate}) async {
     if (selectedUser.value == null) return;
     try {
-      Get.back(); // Tutup dialog
+      Get.back(); 
       Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
       
       WriteBatch batch = _firestore.batch();
       String uid = selectedUser.value!.uid;
       
-      // Gunakan bulan dari startDate yang dipilih user
-      DateTime month = startDate;
-      int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+      // 🔥 POLA BARU SESUAI REQUEST
+      // Urutan: Malam, Malam, Siang, Siang, Pagi, Pagi, Libur
+      // Total siklus: 7 Hari
+      List<String> pattern = ['Malam', 'Malam', 'Siang', 'Siang', 'pagi', 'pagi', 'Libur'];
       
-      // Pola Rotasi: 2-2-2-2
-      List<String> pattern = ['pagi', 'pagi', 'Siang', 'Siang', 'Malam', 'Malam', 'Libur', 'Libur'];
-      
+      // Tentukan Start Index Berdasarkan Pilihan User
       int startIndex = 0;
+      
+      // Kalau pilih "Mulai dari Malam", start index 0
+      if (startShiftId == 'Malam') startIndex = 0;
+      
+      // Kalau pilih "Mulai dari Siang", start index 2 (karena Malam-Malam-Siang...)
       if (startShiftId == 'Siang') startIndex = 2;
-      if (startShiftId == 'Malam') startIndex = 4;
+      
+      // Kalau pilih "Mulai dari Pagi", start index 4
+      if (startShiftId == 'pagi') startIndex = 4;
+      
+      // Kalau pilih "Mulai dari Libur", start index 6
       if (startShiftId == 'Libur') startIndex = 6;
       
       int currentPatternIdx = startIndex;
 
-      // Loop mulai dari Tanggal yang dipilih (startDate.day)
-      for (int i = startDate.day; i <= daysInMonth; i++) {
-        DateTime date = DateTime(month.year, month.month, i);
+      // Generate buat 30 Hari ke depan
+      int durationDays = 30; 
+
+      for (int i = 0; i < durationDays; i++) {
+        DateTime date = startDate.add(Duration(days: i));
         String dateStr = DateFormat('yyyy-MM-dd').format(date);
         
+        // Ambil Shift ID dari Pola (Looping pake Modulo)
         String shiftId = pattern[currentPatternIdx % pattern.length];
         currentPatternIdx++;
         
         DocumentReference docRef = _firestore.collection('shift_schedule').doc("$uid-$dateStr");
-        batch.set(docRef, {
-          'uid': uid, 
-          'date': dateStr, 
-          'shiftId': shiftId, 
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        
+        if (shiftId == 'Libur') {
+           batch.delete(docRef); 
+        } else {
+           batch.set(docRef, {
+            'uid': uid, 
+            'date': dateStr, 
+            'shiftId': shiftId, 
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
       }
       
       await batch.commit(); 
       
-      Get.back();
-      fetchShiftsForSelectedUser(); 
-      Get.snackbar("Sukses", "Jadwal berhasil dibuat mulai tgl ${startDate.day}!");
+      if (Get.isDialogOpen ?? false) Get.back(); // Tutup Loading
+      
+      // Refresh Grid
+      await fetchShiftsForSelectedUser(); 
+      
+      Get.snackbar("Sukses", "Pola (Malam-Siang-Pagi) berhasil dibuat!");
       
     } catch (e) { 
-      Get.back(); 
+      if (Get.isDialogOpen ?? false) Get.back();
       Get.snackbar("Error", "$e"); 
     }
   }
@@ -207,10 +232,17 @@ class AdminScheduleController extends GetxController {
   void updateMasterShift(String shiftId, String start, String end, String tolerance) async {
     try {
       Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
-      int tol = int.tryParse(tolerance) ?? 10; 
-      await _firestore.collection('shifts').doc(shiftId).update({'startTime': start, 'endTime': end, 'Tolerance': tol});
+      int tol = int.tryParse(tolerance) ?? 0; 
+      
+      await _firestore.collection('shifts').doc(shiftId).update({
+        'startTime': start, 
+        'endTime': end, 
+        'Tolerance': tol 
+      });
+      
       fetchMasterShifts(); 
       Get.back(); Get.back(); 
+      Get.snackbar("Sukses", "Jam kerja $shiftId diperbarui");
     } catch (e) {
       Get.back();
       Get.snackbar("Error", "$e");

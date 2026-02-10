@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:absensi_greenliving/controllers/attedance_controler.dart';
-import 'package:absensi_greenliving/models/shift_models.dart'; // 🔥 Import Model Shift
+import 'package:absensi_greenliving/models/shift_models.dart'; // 🔥 Import Model
 import 'package:absensi_greenliving/services/database_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,14 +12,18 @@ class DashboardController extends GetxController {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final DatabaseService _dbService = DatabaseService();
 
-  // 🔥 DATA VISUAL DASHBOARD (TETAP SAMA)
+  // 🔥 DATA VISUAL DASHBOARD
   var weeklyStatus = <String>['pending', 'pending', 'pending', 'pending', 'pending', 'pending', 'pending'].obs;
   var presencePercentage = 0.0.obs;
   var totalPresentMonth = 0.obs;
   var cutiCount = 0.obs;
 
+  // 🔥 [FIX] VARIABLE INI YANG BIKIN ERROR (SEKARANG DITAMBAHIN)
+  // Gunanya buat ngasih tau UI: "Woi, hari ini libur, kunci tombolnya!"
+  var isTodayHoliday = false.obs; 
+
   // Logic Lingkaran Jam Kerja
-  var remainingShiftHours = "00:00".obs; // Format Jam:Menit
+  var remainingShiftHours = "00:00".obs; 
   var shiftProgress = 1.0.obs; 
   Timer? _timer; 
 
@@ -35,7 +39,7 @@ class DashboardController extends GetxController {
     super.onClose();
   }
 
-  // --- FUNGSI REFRESH (Buat Pull-to-Refresh) ---
+  // --- FUNGSI REFRESH ---
   Future<void> refreshData() async {
     await loadDashboardData();
     if (Get.isRegistered<AttendanceController>()) {
@@ -54,7 +58,7 @@ class DashboardController extends GetxController {
     DateTime endOfWeek = startOfWeek.add(const Duration(days: 7));
 
     try {
-      // 1. Ambil History Mingguan (TETAP SAMA)
+      // 1. Ambil History Mingguan
       QuerySnapshot snapshot = await _firestore.collection('attendance_logs')
           .where('uid', isEqualTo: uid)
           .where('date', isGreaterThanOrEqualTo: DateFormat('yyyy-MM-dd').format(startOfWeek))
@@ -82,7 +86,7 @@ class DashboardController extends GetxController {
       }
       weeklyStatus.value = tempStatus;
 
-      // 4. Hitung Statistik Bulanan (TETAP SAMA)
+      // 4. Hitung Statistik Bulanan
       DateTime startOfMonth = DateTime(now.year, now.month, 1);
       AggregateQuerySnapshot countTask = await _firestore.collection('attendance_logs')
           .where('uid', isEqualTo: uid)
@@ -97,13 +101,16 @@ class DashboardController extends GetxController {
       int totalCuti = await _dbService.getUserApprovedLeaveDays(uid);
       cutiCount.value = totalCuti;
 
-   
+      // 🔥 6. UPDATE STATUS LIBUR & TIMER (LOGIC UTAMA)
       ShiftModel? todayShift = await _dbService.getTodayShift(uid);
       
       if (todayShift != null) {
+        // ADA JADWAL -> Tombol Nyala
+        isTodayHoliday.value = false; 
         _startRealShiftTimer(todayShift.startTime, todayShift.endTime);
       } else {
-        // Kalau Libur / Gak ada shift
+        // LIBUR -> Tombol Terkunci
+        isTodayHoliday.value = true; 
         remainingShiftHours.value = "Libur";
         shiftProgress.value = 0.0;
         _timer?.cancel();
@@ -114,14 +121,10 @@ class DashboardController extends GetxController {
     }
   }
 
-  // 🔥 CORE LOGIC TIMER (MENGHITUNG MUNDUR DARI DATA SHIFT ASLI)
+  // 🔥 CORE LOGIC TIMER
   void _startRealShiftTimer(DateTime start, DateTime end) {
-    _timer?.cancel(); // Matikan timer lama biar gak numpuk
-
-    // Update pertama kali langsung (biar gak nunggu 1 detik)
-    _updateTimerTick(start, end);
-
-    // Jalanin Timer Tiap Detik
+    _timer?.cancel(); 
+    _updateTimerTick(start, end); // Update lsg biar gak nunggu
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _updateTimerTick(start, end);
     });
@@ -133,16 +136,15 @@ class DashboardController extends GetxController {
     // KASUS 1: BELUM MULAI SHIFT
     if (now.isBefore(start)) {
       Duration wait = start.difference(now);
-      // Tampilkan "08:00" atau hitung mundur menuju masuk
       remainingShiftHours.value = _formatDuration(wait); 
-      shiftProgress.value = 1.0; // Masih penuh
+      shiftProgress.value = 1.0; 
       return;
     }
 
     // KASUS 2: SUDAH SELESAI SHIFT
     if (now.isAfter(end)) {
       remainingShiftHours.value = "Selesai";
-      shiftProgress.value = 0.0; // Habis
+      shiftProgress.value = 0.0; 
       _timer?.cancel();
       return;
     }
@@ -151,20 +153,15 @@ class DashboardController extends GetxController {
     Duration remaining = end.difference(now);
     Duration totalShift = end.difference(start);
 
-    // Format HH:mm
     remainingShiftHours.value = _formatDuration(remaining);
 
-    // Hitung Progress Lingkaran
-    // 1.0 (Penuh) -> 0.0 (Kosong)
     double progress = remaining.inSeconds / totalShift.inSeconds;
     shiftProgress.value = progress.clamp(0.0, 1.0);
   }
 
-  // Helper Format Jam:Menit (Contoh: 04:30)
   String _formatDuration(Duration d) {
     String h = d.inHours.toString().padLeft(2, "0");
     String m = d.inMinutes.remainder(60).toString().padLeft(2, "0");
-    // String s = d.inSeconds.remainder(60).toString().padLeft(2, "0"); // Detik opsional
     return "$h:$m";
   }
 }

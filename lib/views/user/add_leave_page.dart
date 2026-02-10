@@ -9,7 +9,8 @@ class AddLeavePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.put(LeaveController());
+    // 🔥 FIX: Pake Get.find() biar nyambung sama Controller dari halaman History
+    final controller = Get.find<LeaveController>();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF2F7F2),
@@ -57,7 +58,7 @@ class AddLeavePage extends StatelessWidget {
             _buildSectionTitle("Tanggal (Mulai - Selesai)"),
             const SizedBox(height: 10),
 
-            // 🔥 DATE RANGE PICKER (PILIH MULAI & SELESAI)
+            // 🔥 DATE RANGE PICKER
             InkWell(
               onTap: () async {
                 DateTimeRange? pickedRange = await showDateRangePicker(
@@ -95,10 +96,12 @@ class AddLeavePage extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Obx(() {
-                        String start = DateFormat('dd MMM yyyy', 'id_ID').format(controller.startDate.value);
-                        String end = DateFormat('dd MMM yyyy', 'id_ID').format(controller.endDate.value);
+                        // Pastikan initializeDateFormatting sudah dipanggil di main.dart kalau mau locale ID
+                        // Kalau error, apus 'id_ID' jadi default dulu
+                        String start = DateFormat('dd MMM yyyy').format(controller.startDate.value);
+                        String end = DateFormat('dd MMM yyyy').format(controller.endDate.value);
                         return Text(
-                          "$start - $end", // TAMPILIN RANGE TANGGAL
+                          "$start - $end", 
                           style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600),
                         );
                       }),

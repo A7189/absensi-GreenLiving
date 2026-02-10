@@ -7,12 +7,6 @@ import 'package:intl/intl.dart';
 
 class DatabaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-
-  // ==========================================================
-  // 1. CONFIG & UTILS
-  // ==========================================================
-  
-  // Ambil Config Kantor (Lokasi & Radius)
   Future<Map<String, dynamic>?> getOfficeConfig() async {
     try {
       DocumentSnapshot doc = await _db.collection('settings').doc('office_config').get();
@@ -22,12 +16,6 @@ class DatabaseService {
       return null;
     }
   }
-
-  // ==========================================================
-  // 2. ABSENSI (ATTENDANCE)
-  // ==========================================================
-
-  // Tarik Data Range Tanggal (Filter Client Side)
   Future<List<AttendanceModel>> getAttendanceRange(String uid, DateTime start, DateTime end) async {
     try {
       final query = await _db.collection('attendance_logs')
@@ -140,11 +128,6 @@ class DatabaseService {
       return [];
     }
   }
-
-  // ==========================================================
-  // 3. USER MANAGEMENT
-  // ==========================================================
-
   Future<UserModel?> getUser(String uid) async {
     try {
       DocumentSnapshot doc = await _db.collection('users').doc(uid).get();
@@ -171,12 +154,6 @@ class DatabaseService {
   Future<void> deleteUser(String uid) async {
     await _db.collection('users').doc(uid).delete();
   }
-
-  // ==========================================================
-  // 4. JADWAL & SHIFT (METODE BARU - UID-TANGGAL)
-  // ==========================================================
-
-  // 🔥 [NEW] Ambil Shift Hari Ini (Logic Baru sesuai SS)
   Future<ShiftModel?> getTodayShift(String uid) async {
     try {
       // 1. Format ID: UID-YYYY-MM-DD
@@ -304,11 +281,6 @@ class DatabaseService {
       return [];
     }
   }
-
-  // ==========================================================
-  // 5. CUTI & IZIN (LEAVE)
-  // ==========================================================
-
   Future<void> submitLeaveRequest(LeaveModel request) async {
     try {
       await _db.collection('leave_requests').add(request.toMap());

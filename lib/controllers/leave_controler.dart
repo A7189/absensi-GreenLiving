@@ -30,12 +30,13 @@ class LeaveController extends GetxController {
   }
 
   // 🔥 UPDATE: TARIK DARI COLLECTION YANG BENAR ('leave_requests')
+  // Menggunakan .snapshots() biar AUTO REFRESH realtime
   void fetchMyLeaves() {
     User? user = _auth.currentUser;
     if (user == null) return;
 
     FirebaseFirestore.instance
-        .collection('leave_requests') // <--- SUDAH DISESUAIKAN DENGAN SS DATABASE
+        .collection('leave_requests') 
         .where('uid', isEqualTo: user.uid)
         .orderBy('createdAt', descending: true) // Biar yang baru nongol paling atas
         .snapshots()
@@ -54,6 +55,15 @@ class LeaveController extends GetxController {
     if (type != null) selectedType.value = type;
   }
 
+  // 🔥 FUNGSI BARU: RESET FORM
+  // Dipanggil setelah sukses kirim, biar pas dibuka lagi formnya bersih
+  void resetForm() {
+    selectedType.value = 'Sakit';
+    startDate.value = DateTime.now();
+    endDate.value = DateTime.now();
+    reasonController.clear();
+  }
+
   Future<void> submitRequest() async {
     if (reasonController.text.isEmpty) {
       Get.snackbar("Error", "Alasan wajib diisi bro!", backgroundColor: Colors.red[100]);
@@ -69,7 +79,7 @@ class LeaveController extends GetxController {
         var userModel = await _db.getUser(authUser.uid);
         String userName = userModel?.name ?? "User"; 
 
-        // 2. Bikin Model (Field sudah cocok sama SS: name, reason, status, type, uid)
+        // 2. Bikin Model
         final request = LeaveModel(
           uid: authUser.uid,
           name: userName, 
@@ -81,13 +91,15 @@ class LeaveController extends GetxController {
           createdAt: DateTime.now(),
         );
 
-        // 3. Kirim via DatabaseService (Pastikan service ini juga nulis ke 'leave_requests')
-        // Kalau service Ndan masih nulis ke 'leaves', ganti manual di sini biar aman:
+        // 3. Kirim via DatabaseService
         await FirebaseFirestore.instance.collection('leave_requests').add(request.toMap());
         
-        Get.back(); 
+        // 🔥 RESET FORM & KEMBALI
+        // Reset dulu biar bersih, baru tutup halaman
+        resetForm();
+        
+        Get.back(); // Tutup halaman AddLeavePage
         Get.snackbar("Sukses", "Pengajuan berhasil dikirim!", backgroundColor: Colors.green[100]);
-        reasonController.clear();
       }
     } catch (e) {
       Get.snackbar("Error", "Gagal kirim: $e");

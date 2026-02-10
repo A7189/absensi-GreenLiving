@@ -241,6 +241,7 @@ class AdminLeaveApprovalPage extends StatelessWidget {
       confirmTextColor: Colors.white,
       buttonColor: isApproved ? const Color(0xFF1B5E20) : Colors.red,
       onConfirm: () {
+        Get.back();
         if (item.id != null) {
           controller.updateStatus(item.id!, isApproved);
         }

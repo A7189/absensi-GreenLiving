@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:absensi_greenliving/controllers/dashboard_controler.dart';
-import 'package:absensi_greenliving/models/shift_models.dart'; // 🔥 IMPORT MODEL
+import 'package:absensi_greenliving/models/shift_models.dart'; 
 import 'package:absensi_greenliving/models/user_models.dart';
 import 'package:absensi_greenliving/services/database_service.dart';
 import 'package:absensi_greenliving/services/location_service.dart';
@@ -24,6 +24,9 @@ class AttendanceController extends GetxController {
   var isWithinRadius = false.obs;
   var currentDistance = 0.0.obs;
   var isLoading = false.obs;
+
+  // Status Loading GPS (Buat animasi)
+  var isLocationLoading = true.obs; 
 
   // Status Logic
   var currentStatus = 'pending'.obs; 
@@ -55,7 +58,6 @@ class AttendanceController extends GetxController {
     _startLocationTracking();
   }
 
-  // --- CEK STATUS HARIAN DARI DB ---
   Future<void> checkDailyStatus() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
@@ -65,7 +67,7 @@ class AttendanceController extends GetxController {
       String todayDocId = DateFormat('yyyy-MM-dd').format(now);
 
       QuerySnapshot snapshot = await _firestore.collection('attendance_logs')
-          .where('uid', isEqualTo: uid)
+          .where('userId', isEqualTo: uid) // Pastikan field sesuai DB (userId/uid)
           .where('date', isEqualTo: todayDocId)
           .limit(1)
           .get();
@@ -92,12 +94,11 @@ class AttendanceController extends GetxController {
     }
   }
 
-  // --- 🔥 CORE LOGIC ABSENSI ---
   Future<void> submitAttendance(UserModel user, ShiftModel? shift) async {
     
-    // 1. VALIDASI JADWAL
+    // 1. VALIDASI SHIFT
     if (shift == null) {
-       Get.snackbar("Jadwal Kosong", "Hari ini Anda Libur.");
+       Get.snackbar("Jadwal Kosong", "Hari ini Anda tidak memiliki jadwal shift (Libur).");
        return;
     }
 
@@ -111,7 +112,6 @@ class AttendanceController extends GetxController {
       );
       DateTime now = DateTime.now();
 
-      // 2. VALIDASI LOKASI
       if (distance <= radiusMeters.value) {
         
         // === ABSEN MASUK ===
@@ -120,9 +120,7 @@ class AttendanceController extends GetxController {
           String statusKehadiran = "Hadir";
           int minutesLate = 0;
           
-          // 🔥 AMBIL TOLERANSI DARI DB (ShiftModel)
           int tolerance = shift.toleranceMinutes; 
-
           DateTime lateLimit = shift.startTime.add(Duration(minutes: tolerance));
 
           if (now.isAfter(lateLimit)) {
@@ -131,20 +129,19 @@ class AttendanceController extends GetxController {
           }
 
           DocumentReference docRef = await _firestore.collection('attendance_logs').add({
-            'uid': user.uid,
+            'userId': user.uid, // Samakan field dengan checkDailyStatus
+            'uid': user.uid,    // Backup field
             'date': DateFormat('yyyy-MM-dd').format(now),
             'checkInTime': now, 
             'checkIn': now, 
             'location': GeoPoint(position.latitude, position.longitude),
-            'lat': position.latitude, 'lng': position.longitude,
+            'latitude': position.latitude, 
+            'longitude': position.longitude,
             
-            // Simpan Data Shift
             'shiftId': shift.type, 
             'shiftName': shift.type,
             'shiftStart': DateFormat('HH:mm').format(shift.startTime), 
             'shiftEnd': DateFormat('HH:mm').format(shift.endTime),
-            
-            // Simpan info toleransi
             'appliedTolerance': tolerance,
             
             'status': statusKehadiran, 
@@ -168,26 +165,18 @@ class AttendanceController extends GetxController {
         // === ABSEN PULANG ===
         else if (currentStatus.value == 'checkIn') {
           
-          // 🔥 PERINGATAN PULANG CEPAT (EARLY LEAVE WARNING)
           if (now.isBefore(shift.endTime)) {
              Duration sisa = shift.endTime.difference(now);
-             
-             // Dialog Konfirmasi
-             bool? confirm = await Get.defaultDialog(
-               title: "Pulang Lebih Awal?",
-               titleStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
-               middleText: "Shift berakhir ${sisa.inHours} Jam ${sisa.inMinutes % 60} Menit lagi.\nYakin mau pulang sekarang?",
-               textConfirm: "Ya, Pulang",
-               textCancel: "Batal",
-               confirmTextColor: Colors.white,
-               buttonColor: Colors.orange,
-               onConfirm: () => Get.back(result: true),
-               onCancel: () => Get.back(result: false)
-             );
-
-             if (confirm != true) { 
-               isLoading.value = false; 
-               return; // Batal Absen
+             if (sisa.inMinutes > 5) {
+               bool? confirm = await Get.defaultDialog(
+                 title: "Pulang Awal?",
+                 middleText: "Jadwal pulang jam ${DateFormat('HH:mm').format(shift.endTime)}. Yakin?",
+                 textConfirm: "Ya", textCancel: "Batal",
+                 confirmTextColor: Colors.white,
+                 buttonColor: Colors.orange,
+                 onConfirm: () => Get.back(result: true), onCancel: () => Get.back(result: false)
+               );
+               if (confirm != true) { isLoading.value = false; return; }
              }
           }
 
@@ -198,13 +187,14 @@ class AttendanceController extends GetxController {
               'checkOutLocation': GeoPoint(position.latitude, position.longitude),
             });
             currentStatus.value = 'checkOut'; 
-            _notifyDashboard();
-            Get.snackbar("Selesai", "Hati-hati di jalan");
             
-            // Refresh Dashboard biar Timer berhenti
+            _notifyDashboard();
+            
             if (Get.isRegistered<DashboardController>()) {
                Get.find<DashboardController>().refreshData();
             }
+
+            Get.snackbar("Selesai", "Hati-hati di jalan");
           } else {
              await checkDailyStatus(); 
              Get.snackbar("Info", "Data sinkronisasi ulang, coba tekan sekali lagi.");
@@ -226,11 +216,19 @@ class AttendanceController extends GetxController {
     }
   }
 
+  // 🔥 [FIXED] Logic Loading Lokasi
   void _startLocationTracking() {
+    isLocationLoading.value = true; 
+    
     _positionStream = Geolocator.getPositionStream().listen((p) {
+        // 🔥 STOP LOADING BEGITU DAPET SINYAL GPS (APAPUN KONDISINYA)
+        isLocationLoading.value = false; 
+
         if (officeLat.value == 0.0) return;
+        
         double d = _locationService.calculateDistance(p.latitude, p.longitude, officeLat.value, officeLng.value);
-        currentDistance.value = d; isWithinRadius.value = d <= radiusMeters.value;
+        currentDistance.value = d; 
+        isWithinRadius.value = d <= radiusMeters.value;
     });
   }
   
