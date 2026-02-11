@@ -26,7 +26,7 @@ class AttendanceController extends GetxController {
   var currentDistance = 0.0.obs;
   var isLoading = false.obs;
 
-  // Status Loading GPS (Buat animasi)
+  // Status Loading GPS 
   var isLocationLoading = true.obs; 
 
   // Status Logic

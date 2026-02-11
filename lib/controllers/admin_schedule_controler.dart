@@ -146,6 +146,9 @@ class AdminScheduleController extends GetxController {
         }, SetOptions(merge: true));
       }
 
+      // 🔥 [TAMBAHAN AUTO REFRESH] Ambil data terbaru dari DB biar sinkron
+      await fetchShiftsForSelectedUser();
+
     } catch (e) { 
       fetchShiftsForSelectedUser(); // Revert kalo gagal
     }

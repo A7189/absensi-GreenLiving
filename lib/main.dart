@@ -33,7 +33,7 @@ class MyApp extends StatelessWidget {
       title: 'Green Living Attendance',
       debugShowCheckedModeBanner: false,
       
-      // 🔥 KITA PAKE SPLASH SCREEN SEKARANG
+
       initialRoute: Routes.SPLASH, 
 
       

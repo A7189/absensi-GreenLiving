@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:absensi_greenliving/controllers/attedance_controler.dart';
-import 'package:absensi_greenliving/models/shift_models.dart'; // 🔥 Import Model
+import 'package:absensi_greenliving/models/shift_models.dart'; 
 import 'package:absensi_greenliving/services/database_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,15 +12,18 @@ class DashboardController extends GetxController {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final DatabaseService _dbService = DatabaseService();
 
-  // 🔥 DATA VISUAL DASHBOARD
+  // 🔥 DATA VISUAL DASHBOARD (FITUR LAMA - AMAN)
   var weeklyStatus = <String>['pending', 'pending', 'pending', 'pending', 'pending', 'pending', 'pending'].obs;
   var presencePercentage = 0.0.obs;
   var totalPresentMonth = 0.obs;
   var cutiCount = 0.obs;
 
-  // 🔥 [FIX] VARIABLE INI YANG BIKIN ERROR (SEKARANG DITAMBAHIN)
-  // Gunanya buat ngasih tau UI: "Woi, hari ini libur, kunci tombolnya!"
-  var isTodayHoliday = false.obs; 
+  // 🔥 [NEW] VARIABLE BUAT LOCK SYSTEM & STATUS TEKS (INI YANG TADINYA ERROR)
+  var bufferMinutes = 60.obs; // Default 1 jam
+  var isTimeLocked = true.obs; 
+  var shiftStatusTitle = "Memuat...".obs; 
+  var shiftStatusSubtitle = "Tunggu sebentar...".obs; 
+  var isTodayHoliday = false.obs;
 
   // Logic Lingkaran Jam Kerja
   var remainingShiftHours = "00:00".obs; 
@@ -30,7 +33,8 @@ class DashboardController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    loadDashboardData();
+    // Ambil setting dulu, baru load data
+    fetchSettings().then((_) => loadDashboardData());
   }
 
   @override
@@ -41,10 +45,17 @@ class DashboardController extends GetxController {
 
   // --- FUNGSI REFRESH ---
   Future<void> refreshData() async {
+    await fetchSettings();
     await loadDashboardData();
     if (Get.isRegistered<AttendanceController>()) {
       await Get.find<AttendanceController>().checkDailyStatus();
     }
+  }
+
+  // 🔥 AMBIL SETTING BUFFER DARI DB
+  Future<void> fetchSettings() async {
+    int buffer = await _dbService.getAttendanceBuffer();
+    bufferMinutes.value = buffer;
   }
 
   // --- FUNGSI UTAMA: TARIK DATA DASHBOARD ---
@@ -52,6 +63,7 @@ class DashboardController extends GetxController {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
+    // ... (Code History Mingguan & Statistik - TETAP SAMA TIDAK DISENTUH) ...
     DateTime now = DateTime.now();
     DateTime todayStart = DateTime(now.year, now.month, now.day); 
     DateTime startOfWeek = todayStart.subtract(Duration(days: now.weekday - 1));
@@ -105,12 +117,22 @@ class DashboardController extends GetxController {
       ShiftModel? todayShift = await _dbService.getTodayShift(uid);
       
       if (todayShift != null) {
-        // ADA JADWAL -> Tombol Nyala
+        // ADA JADWAL
         isTodayHoliday.value = false; 
-        _startRealShiftTimer(todayShift.startTime, todayShift.endTime);
+        
+        // Ambil nama shift (Pagi/Siang/Malam) untuk judul
+        String shiftName = (todayShift.type).capitalizeFirst ?? "Regular";
+
+        _startRealShiftTimer(todayShift.startTime, todayShift.endTime, shiftName);
       } else {
         // LIBUR -> Tombol Terkunci
         isTodayHoliday.value = true; 
+        isTimeLocked.value = true;
+        
+        // Update Teks Status biar gak error
+        shiftStatusTitle.value = "Hari Ini Libur";
+        shiftStatusSubtitle.value = "Tidak ada jadwal shift hari ini.";
+        
         remainingShiftHours.value = "Libur";
         shiftProgress.value = 0.0;
         _timer?.cancel();
@@ -121,18 +143,35 @@ class DashboardController extends GetxController {
     }
   }
 
-  // 🔥 CORE LOGIC TIMER
-  void _startRealShiftTimer(DateTime start, DateTime end) {
+  // 🔥 CORE LOGIC TIMER (DITAMBAH PARAMETER SHIFT NAME)
+  void _startRealShiftTimer(DateTime start, DateTime end, String shiftName) {
     _timer?.cancel(); 
-    _updateTimerTick(start, end); // Update lsg biar gak nunggu
+    _updateTimerTick(start, end, shiftName); // Update lsg biar gak nunggu
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _updateTimerTick(start, end);
+      _updateTimerTick(start, end, shiftName);
     });
   }
 
-  void _updateTimerTick(DateTime start, DateTime end) {
+  void _updateTimerTick(DateTime start, DateTime end, String shiftName) {
     DateTime now = DateTime.now();
 
+    // 🔥 LOGIC BARU: CEK APAKAH SUDAH MASUK WAKTU BUFFER (H-1 JAM)
+    DateTime unlockTime = start.subtract(Duration(minutes: bufferMinutes.value));
+
+    if (now.isBefore(unlockTime)) {
+      // --- BELUM WAKTUNYA (TERKUNCI) ---
+      isTimeLocked.value = true;
+      shiftStatusTitle.value = "Shift $shiftName";
+      shiftStatusSubtitle.value = "Absen dibuka pukul ${DateFormat('HH:mm').format(unlockTime)}";
+    } else {
+      // --- SUDAH DIBUKA ---
+      isTimeLocked.value = false;
+      shiftStatusTitle.value = "Shift $shiftName"; 
+      shiftStatusSubtitle.value = "Silakan tap tombol untuk absen"; 
+    }
+
+    // --- LOGIC LAMA: LINGKARAN JAM KERJA ---
+    
     // KASUS 1: BELUM MULAI SHIFT
     if (now.isBefore(start)) {
       Duration wait = start.difference(now);

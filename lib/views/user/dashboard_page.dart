@@ -1,8 +1,8 @@
 import 'package:absensi_greenliving/controllers/attedance_controler.dart';
 import 'package:absensi_greenliving/controllers/dashboard_controler.dart';
-import 'package:absensi_greenliving/models/shift_models.dart'; // 🔥 Import Model
+import 'package:absensi_greenliving/models/shift_models.dart'; 
 import 'package:absensi_greenliving/models/user_models.dart';
-import 'package:absensi_greenliving/services/database_service.dart'; // 🔥 Import DB
+import 'package:absensi_greenliving/services/database_service.dart'; 
 import 'package:absensi_greenliving/views/user/history_page.dart';
 import 'package:absensi_greenliving/views/user/leave_request_page.dart';
 import 'package:absensi_greenliving/views/user/schedule_page.dart';
@@ -34,11 +34,11 @@ class DashboardPage extends StatelessWidget {
                   // 🔥 FITUR BARU: PULL TO REFRESH
                   child: RefreshIndicator(
                     onRefresh: () async {
+                      // Ini PENTING: Refresh data biar kalau Admin ubah jadwal, user langsung dapet update
                       await dashController.refreshData();
                     },
                     color: const Color(0xFF1B5E20),
                     child: SingleChildScrollView(
-                      // Pake AlwaysScrollable biar bisa ditarik walau konten sedikit
                       physics: const AlwaysScrollableScrollPhysics(), 
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Column(
@@ -73,18 +73,18 @@ class DashboardPage extends StatelessWidget {
                                 ),
                               );
                             }
-                            // TAMPILKAN KARTU TOMBOL (LOGIC BARU)
+                            // TAMPILKAN KARTU TOMBOL
                             return _buildAttendanceCard(attController, dashController);
                           }),
                           
                           const SizedBox(height: 20),
                           
-                          // --- WIDGET TANGGAL & LOKASI (ADA LOADINGNYA) ---
+                          // --- WIDGET TANGGAL & LOKASI ---
                           Obx(() => _buildDateAndWeekStatus(attController, dashController)),
                           
                           const SizedBox(height: 20),
                           
-                          // --- STATISTIK LINGKARAN (TIMER & CUTI) ---
+                          // --- STATISTIK LINGKARAN ---
                           _buildCircularStats(dashController),
                           
                           const SizedBox(height: 20),
@@ -103,47 +103,60 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  // --- 🔥 LOGIC BARU: TOMBOL ABSEN PINTAR (BISA DIKUNCI) ---
+  // --- 🔥 TOMBOL ABSEN: FORCE LOCK SYSTEM ---
   Widget _buildAttendanceCard(AttendanceController controller, DashboardController dashController) {
     return Obx(() {
       bool isCheckIn = controller.currentStatus.value == 'pending';
       
-      // 🔥 Logic Kunci: Kalau Libur DAN Belum Absen = Terkunci
-      bool isLibur = dashController.isTodayHoliday.value; 
-      bool isLocked = isLibur && isCheckIn;
+      // Ambil Judul Status Langsung dari Controller
+      String title = dashController.shiftStatusTitle.value;
+      String subtitle = dashController.shiftStatusSubtitle.value;
 
-      String title;
-      String subtitle;
+      // 🔥 LOGIC JURUS KERAS:
+      // Cek apakah judul mengandung kata "Menunggu" atau "Libur".
+      // Kalau iya, PAKSA LOCK (true), abaikan variable lain.
+      bool isForceLocked = title.contains("Menunggu") || title.contains("Libur");
+      
+      // Status akhir lock
+      bool isLocked = isCheckIn ? (dashController.isTimeLocked.value || isForceLocked) : false;
+
       Color iconColor;
-      Color bgCardColor = Colors.white;
+      Color bgCardColor;
+      Color textColor;
 
       if (isLocked) {
-        title = "Hari Ini Libur";
-        subtitle = "Tidak ada jadwal shift hari ini.";
-        iconColor = Colors.grey;
-        bgCardColor = Colors.grey.shade100;
+        // --- VISUAL MATI (ABU-ABU) ---
+        iconColor = Colors.grey.shade500;
+        bgCardColor = Colors.grey.shade300; // Background Gelap biar keliatan disable
+        textColor = Colors.grey.shade600;
       } else {
+        // --- VISUAL AKTIF ---
         title = isCheckIn ? 'Absen Masuk' : 'Absen Pulang';
         subtitle = isCheckIn 
             ? 'Silakan tap tombol di bawah untuk masuk' 
             : 'Silakan tap tombol di bawah untuk pulang';
-        iconColor = isCheckIn ? const Color(0xFFE57373) : Colors.orange;
+        
+        iconColor = isCheckIn ? const Color(0xFF1B5E20) : Colors.orange;
+        bgCardColor = Colors.white;
+        textColor = Colors.black87;
       }
 
-      return Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          // 🔥 Matikan fungsi onTap kalau Locked atau Loading
-          onTap: (controller.isLoading.value || isLocked)
-            ? null 
-            : () async {
+      // 🔥 IGNORE POINTER: BIKIN TOMBOL GAK BISA DISENTUH FISIK
+      return IgnorePointer(
+        ignoring: isLocked || controller.isLoading.value, 
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () async {
                 if (controller.isLoading.value) return;
+
+                // Guard Clause Tambahan
+                if (isLocked) return;
 
                 User? firebaseUser = FirebaseAuth.instance.currentUser;
                 if (firebaseUser == null) return;
                 
-                // 1. Siapkan Data User
                 UserModel currentUser = UserModel(
                   uid: firebaseUser.uid,
                   name: firebaseUser.displayName ?? "Satpam",
@@ -154,57 +167,57 @@ class DashboardPage extends StatelessWidget {
                   officeLng: controller.officeLng.value, 
                 );
 
-                // 🔥 2. TARIK DATA SHIFT DARI DB (METODE BARU)
                 final db = DatabaseService();
                 ShiftModel? todayShift = await db.getTodayShift(currentUser.uid);
 
-                // 3. Kirim ke Controller (Controller validasi Libur/Telat)
                 await controller.submitAttendance(currentUser, todayShift);
+                dashController.refreshData();
               },
-          child: Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: bgCardColor,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 15,
-                  offset: const Offset(0, 8),
-                )
-              ],
-            ),
-            child: Row(
-              children: [
-                // Icon Loading / Gembok / Jari
-                controller.isLoading.value 
-                  ? const SizedBox(width: 30, height: 30, child: CircularProgressIndicator())
-                  : Icon(
-                      isLocked ? Icons.block_rounded : Icons.touch_app_rounded, 
-                      color: iconColor, 
-                      size: 30
-                    ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold, 
-                          color: isLocked ? Colors.grey : Colors.black87, 
-                          fontSize: 15
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: bgCardColor,
+                borderRadius: BorderRadius.circular(20),
+                // 🔥 HILANGKAN SHADOW JIKA LOCKED
+                boxShadow: isLocked ? [] : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 15,
+                    offset: const Offset(0, 8),
+                  )
+                ],
+              ),
+              child: Row(
+                children: [
+                  controller.isLoading.value 
+                    ? const SizedBox(width: 30, height: 30, child: CircularProgressIndicator())
+                    : Icon(
+                        isLocked ? Icons.lock_clock_rounded : Icons.touch_app_rounded, 
+                        color: iconColor, 
+                        size: 30
+                      ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold, 
+                            color: textColor, 
+                            fontSize: 15
+                          ),
                         ),
-                      ),
-                      Text(
-                        subtitle, 
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
+                        Text(
+                          subtitle, 
+                          style: TextStyle(color: textColor.withOpacity(0.8), fontSize: 12),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -212,7 +225,7 @@ class DashboardPage extends StatelessWidget {
     });
   }
 
-  // --- LOGIC LINGKARAN CUTI & JAM ---
+  // --- SISA WIDGET DI BAWAH TIDAK DIUBAH (SAMA PERSIS) ---
   Widget _buildCircularStats(DashboardController controller) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
@@ -220,23 +233,18 @@ class DashboardPage extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          // 1. KEHADIRAN
           Obx(() => _buildProgressCircle(
             "${(controller.presencePercentage.value * 100).toInt()}%", 
             'Kehadiran', 
             const Color(0xFF1B5E20), 
             controller.presencePercentage.value
           )),
-          
-          // 2. CUTI (DATA REAL TAHUNAN)
           Obx(() => _buildProgressCircle(
             "${controller.cutiCount.value}", 
             'Cuti', 
             Colors.blueAccent, 
             (controller.cutiCount.value / 12) 
           )),
-          
-          // 3. JAM KERJA (TIMER MUNDUR REAL)
           Obx(() => _buildProgressCircle(
             "${controller.remainingShiftHours.value}", 
             'Jam Kerja', 
@@ -310,11 +318,10 @@ class DashboardPage extends StatelessWidget {
               ),
               const SizedBox(width: 10), 
               
-          
               Obx(() {
                 double dist = attCtrl.currentDistance.value;
                 bool isNear = attCtrl.isWithinRadius.value;
-                bool isLoadingLoc = attCtrl.isLocationLoading.value; // Cek status loading
+                bool isLoadingLoc = attCtrl.isLocationLoading.value;
 
                 String distanceText = dist > 1000 
                     ? "${(dist/1000).toStringAsFixed(1)} km"
@@ -335,7 +342,7 @@ class DashboardPage extends StatelessWidget {
                     children: [
                       Icon(
                         isLoadingLoc 
-                          ? Icons.location_searching_rounded // Icon nyari sinyal
+                          ? Icons.location_searching_rounded 
                           : (isNear ? Icons.verified_user_rounded : Icons.location_off_rounded), 
                         size: 26, 
                         color: isNear ? Colors.green[700] : Colors.red[400]
@@ -344,7 +351,6 @@ class DashboardPage extends StatelessWidget {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 🔥 LOGIC: TAMPILKAN SPINNER ATAU JARAK
                           if (isLoadingLoc)
                             SizedBox(
                               width: 15, height: 15, 
@@ -363,7 +369,6 @@ class DashboardPage extends StatelessWidget {
                                 height: 1.0
                               ),
                             ),
-                          
                           Text(
                             isLoadingLoc ? "Mencari..." : "dari Pos",
                             style: GoogleFonts.poppins(

@@ -18,10 +18,10 @@ class ShiftModel {
     required this.type,
     required this.startTime,
     required this.endTime,
-    required this.toleranceMinutes, // Wajib diisi
+    required this.toleranceMinutes, 
   });
 
-  // Load dari Firestore (Map -> Object)
+
   factory ShiftModel.fromMap(Map<String, dynamic> data) {
     return ShiftModel(
       uid: data['uid'] ?? '',
@@ -30,13 +30,12 @@ class ShiftModel {
       startTime: (data['startTime'] as Timestamp).toDate(),
       endTime: (data['endTime'] as Timestamp).toDate(),
       
-      // 🔥 Ambil toleransi (Default 0 kalo gak ada di map)
-      // Kita cek 'toleranceMinutes' (format app) atau 'Tolerance' (format raw DB) jaga-jaga
+    
       toleranceMinutes: data['toleranceMinutes'] ?? data['Tolerance'] ?? 0,
     );
   }
 
-  // Simpan ke Firestore (Object -> Map)
+
   Map<String, dynamic> toMap() {
     return {
       'uid': uid,
@@ -44,8 +43,6 @@ class ShiftModel {
       'type': type,
       'startTime': Timestamp.fromDate(startTime),
       'endTime': Timestamp.fromDate(endTime),
-      
-      // 🔥 Simpan toleransi ke DB
       'toleranceMinutes': toleranceMinutes, 
     };
   }

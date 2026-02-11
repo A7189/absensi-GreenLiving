@@ -1,9 +1,9 @@
 import 'package:absensi_greenliving/controllers/attedance_controler.dart';
 import 'package:absensi_greenliving/controllers/dashboard_controler.dart';
 import 'package:absensi_greenliving/controllers/nav_controler.dart';
-import 'package:absensi_greenliving/models/shift_models.dart'; // 🔥 IMPORT MODEL SHIFT
+import 'package:absensi_greenliving/models/shift_models.dart';
 import 'package:absensi_greenliving/models/user_models.dart';
-import 'package:absensi_greenliving/services/database_service.dart'; // 🔥 IMPORT DB SERVICE
+import 'package:absensi_greenliving/services/database_service.dart';
 import 'package:absensi_greenliving/views/admin/admin_dashboard_page.dart';
 import 'package:absensi_greenliving/views/admin/admin_schedule_page.dart'; 
 import 'package:absensi_greenliving/views/user/dashboard_page.dart';
@@ -23,8 +23,10 @@ class MainWrapper extends StatelessWidget {
     final navPageController = Get.put(NavigationController());
     final attendanceController = Get.put(AttendanceController());
     
+    // Pastikan DashboardController ada biar bisa cek status Lock
+    DashboardController? dashboardController;
     if (!isAdmin) {
-      Get.put(DashboardController()); 
+      dashboardController = Get.put(DashboardController()); 
     }
 
     final List<Widget> pages = isAdmin
@@ -52,29 +54,51 @@ class MainWrapper extends StatelessWidget {
           );
       }),
       
-      floatingActionButton: isAdmin ? null : _buildFabAbsen(attendanceController),
+      // Kirim DashboardController ke FAB biar sinkron
+      floatingActionButton: isAdmin ? null : _buildFabAbsen(attendanceController, dashboardController),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       
       bottomNavigationBar: CustomBottomNavBar(isAdmin: isAdmin),
     );
   }
 
-  Widget _buildFabAbsen(AttendanceController controller) {
+  // 🔥 UPDATE FAB: KONEK KE DASHBOARD CONTROLLER BUAT CEK LOCK
+  Widget _buildFabAbsen(AttendanceController controller, DashboardController? dashController) {
     return Obx(() {
       String status = controller.currentStatus.value;
       bool loading = controller.isLoading.value;
       
+      // 🔥 LOGIC LOCK SYSTEM DARI DASHBOARD
+      // Default false kalau controller belum siap
+      bool isSystemLocked = dashController?.isTimeLocked.value ?? false; 
+      
+      // Ambil judul shift buat cek "Force Lock" (Menunggu/Libur)
+      String title = dashController?.shiftStatusTitle.value ?? "";
+      bool isForceLocked = title.contains("Menunggu") || title.contains("Libur");
+      
+      // Kunci hanya berlaku pas Masuk (Pending). Kalau Pulang (CheckIn), bebas.
+      bool isLocked = (status == 'pending') ? (isSystemLocked || isForceLocked) : false;
+
       Color fabColor;
       IconData icon;
       bool isDisabled = false;
 
       if (status == 'pending') {
-        fabColor = const Color(0xFF1B5E20); 
-        icon = Icons.fingerprint_rounded;
+        if (isLocked) {
+          // --- TERKUNCI (ABU-ABU) ---
+          fabColor = Colors.grey.shade400; 
+          icon = Icons.lock_clock; // Icon Gembok
+          isDisabled = true;       // Matikan fungsi
+        } else {
+          // --- TERBUKA (IJO) ---
+          fabColor = const Color(0xFF1B5E20); 
+          icon = Icons.fingerprint_rounded;
+        }
       } else if (status == 'checkIn') {
         fabColor = const Color(0xFFE65100); 
         icon = Icons.logout_rounded;
       } else {
+        // --- SELESAI HARI INI ---
         fabColor = Colors.grey; 
         icon = Icons.check_circle_outline;
         isDisabled = true;
@@ -84,14 +108,20 @@ class MainWrapper extends StatelessWidget {
         width: 75,
         height: 75,
         child: FloatingActionButton(
+          // 🔥 Matikan fungsi kalau locked
           onPressed: (loading || isDisabled)
               ? null
               : () {
+                  // Double check biar aman
+                  if (isLocked) {
+                    Get.snackbar("Eits!", "Belum waktunya absen bro.");
+                    return;
+                  }
                   _handleAttendance(controller);
                 },
           backgroundColor: fabColor,
           shape: const CircleBorder(),
-          elevation: 6,
+          elevation: isDisabled ? 0 : 6, // Ilangin shadow kalau mati
           child: loading
               ? const CircularProgressIndicator(color: Colors.white)
               : Icon(icon, size: 36, color: Colors.white),
@@ -100,12 +130,10 @@ class MainWrapper extends StatelessWidget {
     });
   }
 
-  // 🔥 LOGIC INI YANG DIUPDATE BIAR SAMA KAYAK DASHBOARD
   void _handleAttendance(AttendanceController controller) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null) {
       
-      // 1. Siapkan User Model
       final userModel = UserModel(
         uid: currentUser.uid,
         name: currentUser.displayName ?? 'Security User',
@@ -116,13 +144,15 @@ class MainWrapper extends StatelessWidget {
         officeLng: controller.officeLng.value,
       );
       
-      // 🔥 2. TARIK SHIFT DARI DB (METODE BARU)
-      // Gak pake dummy "shift_pagi" lagi
       final db = DatabaseService();
       ShiftModel? todayShift = await db.getTodayShift(currentUser.uid);
 
-      // 🔥 3. KIRIM KE CONTROLLER
       await controller.submitAttendance(userModel, todayShift);
+      
+      // 🔥 REFRESH DASHBOARD SETELAH ABSEN BIAR UPDATE VISUAL
+      if (Get.isRegistered<DashboardController>()) {
+        Get.find<DashboardController>().refreshData();
+      }
     }
   }
 }

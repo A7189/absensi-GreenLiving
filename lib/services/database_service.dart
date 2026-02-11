@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 class DatabaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+
   Future<Map<String, dynamic>?> getOfficeConfig() async {
     try {
       DocumentSnapshot doc = await _db.collection('settings').doc('office_config').get();
@@ -16,6 +17,7 @@ class DatabaseService {
       return null;
     }
   }
+
   Future<List<AttendanceModel>> getAttendanceRange(String uid, DateTime start, DateTime end) async {
     try {
       final query = await _db.collection('attendance_logs')
@@ -128,6 +130,7 @@ class DatabaseService {
       return [];
     }
   }
+
   Future<UserModel?> getUser(String uid) async {
     try {
       DocumentSnapshot doc = await _db.collection('users').doc(uid).get();
@@ -154,6 +157,8 @@ class DatabaseService {
   Future<void> deleteUser(String uid) async {
     await _db.collection('users').doc(uid).delete();
   }
+
+  // === INI FUNGSI GET TODAY SHIFT ASLI LU (Pake shift_schedule) ===
   Future<ShiftModel?> getTodayShift(String uid) async {
     try {
       // 1. Format ID: UID-YYYY-MM-DD
@@ -196,7 +201,7 @@ class DatabaseService {
           type: shiftId,
           startTime: _parseTime(startStr),
           endTime: _parseTime(endStr),
-          toleranceMinutes: tolerance, // Pastikan Model lu punya field ini
+          toleranceMinutes: tolerance, 
         );
       }
       return null;
@@ -237,8 +242,7 @@ class DatabaseService {
     }
   }
 
-  // 🔥 [UPDATED] Live Monitoring (Logic Baru)
-  // Tidak pakai monthly_shifts lagi, tapi loop cek jadwal harian
+  // Live Monitoring
   Future<List<Map<String, dynamic>>> getTodayScheduleWithStatus() async {
     try {
       String todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -281,6 +285,7 @@ class DatabaseService {
       return [];
     }
   }
+
   Future<void> submitLeaveRequest(LeaveModel request) async {
     try {
       await _db.collection('leave_requests').add(request.toMap());
@@ -353,10 +358,6 @@ class DatabaseService {
     } catch (e) { return 0; }
   }
 
-  // ==========================================================
-  // 6. DASHBOARD ADMIN STATS
-  // ==========================================================
-
   Future<Map<String, int>> getLiveMonitoringStats() async {
     try {
       String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -378,6 +379,7 @@ class DatabaseService {
     }
   }
 
+  // --- HELPER FUNCTIONS ---
 
   LeaveModel _parseLeave(QueryDocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
@@ -414,7 +416,6 @@ class DatabaseService {
     );
   }
 
-  // Helper Parse Time (Support . dan :)
   DateTime _parseTime(String timeString) {
     DateTime now = DateTime.now();
     try {
@@ -425,4 +426,19 @@ class DatabaseService {
       return now;
     }
   }
+
+  // 🔥 FUNGSI BUFFER INI GUA MASUKIN KE DALAM BIAR GAK ERROR
+  Future<int> getAttendanceBuffer() async {
+    try {
+      var doc = await _db.collection('settings').doc('attendance_rules').get(); 
+      if (doc.exists && doc.data() != null) {
+        return doc.data()!['buffer_minutes'] ?? 60;
+      }
+      return 60; 
+    } catch (e) {
+      print("Error getAttendanceBuffer: $e");
+      return 60;
+    }
+  }
+
 }
