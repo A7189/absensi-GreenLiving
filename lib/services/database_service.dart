@@ -441,4 +441,25 @@ class DatabaseService {
     }
   }
 
+  Future<DateTime?> fetchTodayCheckInTime(String uid) async {
+  try {
+    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    var snap = await _db.collection('attendance_logs')
+        .where('uid', isEqualTo: uid)
+        .where('date', isEqualTo: today)
+        .limit(1)
+        .get();
+
+    if (snap.docs.isNotEmpty) {
+      var data = snap.docs.first.data();
+      if (data['checkInTime'] != null) {
+        return (data['checkInTime'] as Timestamp).toDate();
+      }
+    }
+  } catch (e) {
+    print("Error fetch checkin: $e");
+  }
+  return null;
+}
+
 }
