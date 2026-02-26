@@ -27,8 +27,9 @@ dependencies:
   open_file: ^3.3.2
   flutter_launcher_icons: "^0.13.1"      
   flutter_native_splash: "^2.3.1"
-  connectivity_plus: ^6.0.0  
-
+  connectivity_plus: ^6.0.0 
+  share_plus: ^10.0.0
+  syncfusion_flutter_xlsio: ^28.2.3
 
 dev_dependencies:
   flutter_test:

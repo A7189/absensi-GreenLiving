@@ -1,4 +1,5 @@
 import 'package:absensi_greenliving/controllers/auth_controler.dart';
+import 'package:absensi_greenliving/views/auth/forgot_pass_page.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -100,13 +101,19 @@ class LoginPage extends StatelessWidget {
                       style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[700]),
                     ),
                     const Spacer(),
-                    TextButton(
-                      onPressed: () => Get.snackbar("Info", "Fitur lupa password belum tersedia."),
-                      child: Text(
-                        'Forget password?',
-                        style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 14, fontWeight: FontWeight.w500),
-                      ),
-                    ),
+                   TextButton(
+  // 🔥 Ganti ini: Dari Snackbar jadi Navigasi ke Halaman Lupa Password
+  onPressed: () => Get.to(() => const ForgotPasswordPage()), 
+  
+  child: Text(
+    'Forget password?',
+    style: GoogleFonts.poppins(
+      color: Colors.grey[600], 
+      fontSize: 14, 
+      fontWeight: FontWeight.w500
+    ),
+  ),
+),
                   ],
                 ),
 

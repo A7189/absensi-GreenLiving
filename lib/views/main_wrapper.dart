@@ -140,8 +140,6 @@ class MainWrapper extends StatelessWidget {
         email: currentUser.email ?? '',
         role: 'security',
         joinDate: DateTime.now(),
-        officeLat: controller.officeLat.value,
-        officeLng: controller.officeLng.value,
       );
       
       final db = DatabaseService();

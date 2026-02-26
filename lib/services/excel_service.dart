@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:excel/excel.dart';
+import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xcel; 
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:intl/intl.dart';
@@ -7,158 +7,193 @@ import 'package:absensi_greenliving/models/user_models.dart';
 
 class ExcelService {
 
-  Future<void> exportAttendanceMatrix(
+  Future<void> exportAttendanceSplit(
     String fileName, 
     List<UserModel> employees,
     Map<String, Map<String, dynamic>> dataMap, 
     DateTime startDate,
     DateTime endDate
   ) async {
-    var excel = Excel.createExcel();
-    String sheetName = "Laporan_Absensi";
-    Sheet sheet = excel[sheetName];
-    excel.setDefaultSheet(sheetName);
-
-    // STYLE
-    CellStyle headerStyle = CellStyle(
-      bold: true,
-      backgroundColorHex: ExcelColor.fromHexString("#1B5E20"),
-      fontColorHex: ExcelColor.white,
-      horizontalAlign: HorizontalAlign.Center,
-      verticalAlign: VerticalAlign.Center,
-    );
-
-    CellStyle centerStyle = CellStyle(
-      horizontalAlign: HorizontalAlign.Center,
-      verticalAlign: VerticalAlign.Center,
-      textWrapping: TextWrapping.WrapText,
-    );
-
-    // HEADER TANGGAL
-    List<String> fullDates = [];
-    int daysCount = endDate.difference(startDate).inDays;
     
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0))
-      ..value = TextCellValue("No")..cellStyle = headerStyle;
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0))
-      ..value = TextCellValue("Nama Pegawai")..cellStyle = headerStyle;
+    final xcel.Workbook workbook = xcel.Workbook();
+    String periodStr = "${DateFormat('dd/MM/yyyy').format(startDate)} - ${DateFormat('dd/MM/yyyy').format(endDate)}";
+
+    var securityList = employees.where((e) => e.role.toLowerCase().contains('security') || e.role.toLowerCase().contains('satpam')).toList();
+    var cleanerList = employees.where((e) => e.role.toLowerCase().contains('cleaner') || e.role.toLowerCase().contains('kebersihan') || e.role.toLowerCase().contains('sapu') || e.role.toLowerCase().contains('taman') || e.role.toLowerCase().contains('sampah')).toList();
+
+    // SHEET 1: SATPAM
+    final xcel.Worksheet sheet1 = workbook.worksheets[0];
+    sheet1.name = "Laporan Satpam";
+    _populateSheet(workbook, sheet1, "Laporan Satpam", securityList, dataMap, startDate, endDate, periodStr);
+
+    // SHEET 2: KEBERSIHAN
+    final xcel.Worksheet sheet2 = workbook.worksheets.addWithName("Laporan Kebersihan");
+    _populateSheet(workbook, sheet2, "Laporan Kebersihan", cleanerList, dataMap, startDate, endDate, periodStr);
+
+    await _saveAndOpenFile(workbook, fileName);
+  }
+
+  void _populateSheet(
+    xcel.Workbook workbook,
+    xcel.Worksheet sheet, 
+    String title, 
+    List<UserModel> roleEmployees, 
+    Map<String, Map<String, dynamic>> dataMap,
+    DateTime startDate,
+    DateTime endDate,
+    String periodStr
+  ) {
+    
+    sheet.showGridlines = false; // Gridlines mati biar bersih
+
+    // --- STYLE ---
+    // Header (Hijau)
+    final xcel.Style headerStyle = workbook.styles.add('HeaderStyle_${sheet.name}');
+    headerStyle.backColor = '#1B5E20'; 
+    headerStyle.fontColor = '#FFFFFF'; 
+    headerStyle.bold = true;
+    headerStyle.hAlign = xcel.HAlignType.center;
+    headerStyle.vAlign = xcel.VAlignType.center;
+    headerStyle.borders.all.lineStyle = xcel.LineStyle.thin; 
+    headerStyle.borders.all.color = '#FFFFFF';
+
+    // Data Tengah
+    final xcel.Style dataStyle = workbook.styles.add('DataStyle_${sheet.name}');
+    dataStyle.hAlign = xcel.HAlignType.center;
+    dataStyle.vAlign = xcel.VAlignType.center;
+    dataStyle.borders.all.lineStyle = xcel.LineStyle.thin; 
+    dataStyle.borders.all.color = '#D3D3D3'; 
+
+    // Nama (Kiri)
+    final xcel.Style nameStyle = workbook.styles.add('NameStyle_${sheet.name}');
+    nameStyle.hAlign = xcel.HAlignType.left;
+    nameStyle.vAlign = xcel.VAlignType.center;
+    nameStyle.borders.all.lineStyle = xcel.LineStyle.thin;
+    nameStyle.borders.all.color = '#D3D3D3';
+
+    // Merah (Telat/Tanpa Keterangan)
+    final xcel.Style redStyle = workbook.styles.add('RedStyle_${sheet.name}');
+    redStyle.fontColor = '#FF0000'; 
+    redStyle.bold = true;
+    redStyle.hAlign = xcel.HAlignType.center;
+    redStyle.vAlign = xcel.VAlignType.center;
+    redStyle.borders.all.lineStyle = xcel.LineStyle.thin;
+    redStyle.borders.all.color = '#D3D3D3';
+
+    // Kuning / Biru (Untuk Izin)
+    final xcel.Style permitStyle = workbook.styles.add('PermitStyle_${sheet.name}');
+    permitStyle.fontColor = '#E65100'; // Oranye biar beda
+    permitStyle.bold = true;
+    permitStyle.hAlign = xcel.HAlignType.center;
+    permitStyle.vAlign = xcel.VAlignType.center;
+    permitStyle.borders.all.lineStyle = xcel.LineStyle.thin;
+    permitStyle.borders.all.color = '#D3D3D3';
+
+
+    // --- KOP JUDUL ---
+    sheet.getRangeByIndex(1, 1).setText(title.toUpperCase());
+    sheet.getRangeByIndex(1, 1).cellStyle.fontSize = 14;
+    sheet.getRangeByIndex(1, 1).cellStyle.bold = true;
+    sheet.getRangeByIndex(1, 1).cellStyle.fontColor = '#1B5E20';
+    sheet.getRangeByIndex(2, 1).setText("Periode: $periodStr");
+    sheet.getRangeByIndex(2, 1).cellStyle.italic = true;
+
+    // --- HEADER TABEL ---
+    List<String> columns = ['Tanggal', 'Nama Pegawai', 'Shift', 'Masuk', 'Keluar', 'Keterangan'];
+    for (int i = 0; i < columns.length; i++) {
+      final xcel.Range range = sheet.getRangeByIndex(4, i + 1);
+      range.setText(columns[i]);
+      range.cellStyle = headerStyle;
+    }
+
+    // --- ISI DATA ---
+    int rowIdx = 5;
+    int daysCount = endDate.difference(startDate).inDays;
 
     for (int i = 0; i <= daysCount; i++) {
       DateTime d = startDate.add(Duration(days: i));
-      fullDates.add(DateFormat('yyyy-MM-dd').format(d));
-      var cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i + 2, rowIndex: 0));
-      cell.value = TextCellValue(DateFormat('dd').format(d));
-      cell.cellStyle = headerStyle;
-    }
+      String dateKey = DateFormat('yyyy-MM-dd').format(d);
+      String dateDisplay = DateFormat('dd/MM/yyyy').format(d);
 
-    // ISI DATA
-    int rowIndex = 1;
-    for (var emp in employees) {
-      // Kolom No & Nama
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex))
-        ..value = IntCellValue(rowIndex)..cellStyle = centerStyle;
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: rowIndex))
-        ..value = TextCellValue(emp.name)
-        ..cellStyle = CellStyle(verticalAlign: VerticalAlign.Center, horizontalAlign: HorizontalAlign.Left);
-
-      // Loop Tanggal
-      for (int i = 0; i < fullDates.length; i++) {
-        String dateKey = fullDates[i];
-        var cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i + 2, rowIndex: rowIndex));
+      for (var emp in roleEmployees) {
         var cellData = dataMap[emp.uid]?[dateKey];
-
-        String text = "-";
-        ExcelColor bgColor = ExcelColor.white;
-        ExcelColor fontColor = ExcelColor.black; // Default Hitam
-
+        
         if (cellData != null) {
-          String type = cellData['type'];
-          String value = cellData['value'].toString();
-          
-          // Ambil nama shift (lowercase)
-          String shiftName = (cellData['shift'] ?? "").toString().toLowerCase();
+          bool showRow = false;
+          String shift = "-";
+          String inTime = "-";
+          String outTime = "-";
+          String status = "-";
+          xcel.Style rowStyle = dataStyle; // Default style
 
-          // --- KASUS 1: Cuma Jadwal ---
-          if (type == 'schedule') {
-            if (value == 'Libur') {
-              text = "Libur";
-              bgColor = ExcelColor.fromHexString("#EEEEEE"); // Abu-abu
-            } else {
-              text = "-";
-              bgColor = ExcelColor.fromHexString("#FFCDD2"); // Merah Muda (Alpha)
+          // 1. DATA ABSENSI (Hadir)
+          if (cellData['type'] == 'attendance') {
+            showRow = true;
+            shift = cellData['shift'] ?? '-';
+            inTime = cellData['in'].toString();
+            outTime = cellData['out'].toString();
+            status = cellData['status'] ?? '-';
+            
+            if (status.toLowerCase().contains('terlambat')) {
+              rowStyle = redStyle;
             }
           } 
-          // --- KASUS 2: Data Absen Masuk ---
-          else if (type == 'attendance') {
-            String time = value;
-            String status = cellData['status'] ?? 'Hadir';
-            
-            // 🔥 FORMAT TEKS: SELALU "Hadir (Jam)"
-            // Gak ada lagi tulisan "Terlambat" di sel
-            text = "Hadir\n($time)";
+          // 2. DATA IZIN (Sakit/Cuti)
+          else if (cellData['type'] == 'permission') {
+            showRow = true;
+            shift = "-"; // Shift dikosongin atau strip
+            inTime = "IZIN"; // Indikator visual
+            outTime = "IZIN";
+            // Format: "Sakit (Demam)" atau "Cuti (Nikahan)"
+            status = "${cellData['value']} (${cellData['reason']})";
+            rowStyle = permitStyle; // Pake warna oranye
+          }
+          // 3. JADWAL (Tapi gak absen)
+          else if (cellData['type'] == 'schedule' && cellData['value'].toString().toLowerCase() != 'libur') {
+            showRow = true;
+            shift = cellData['value'].toString();
+            status = "Tanpa Keterangan";
+            rowStyle = redStyle;
+          }
 
-            // 🔥 LOGIC WARNA FONT: MERAH KALAU TELAT
-            if (status.toLowerCase().contains('terlambat') || status.toLowerCase().contains('late')) {
-              fontColor = ExcelColor.red; 
-            }
+          if (showRow) {
+            sheet.getRangeByIndex(rowIdx, 1).setText(dateDisplay);
+            sheet.getRangeByIndex(rowIdx, 1).cellStyle = dataStyle;
 
-            // 🔥 LOGIC BACKGROUND SHIFT
-            if (shiftName.contains('pagi')) {
-              bgColor = ExcelColor.fromHexString("#FFF59D"); // Kuning
-            } else if (shiftName.contains('siang')) {
-              bgColor = ExcelColor.fromHexString("#A5D6A7"); // Hijau
-            } else if (shiftName.contains('malam')) {
-              bgColor = ExcelColor.fromHexString("#90CAF9"); // Biru
-            } else if (shiftName.contains('libur')) {
-              bgColor = ExcelColor.fromHexString("#EEEEEE"); 
-            } else {
-              bgColor = ExcelColor.white; 
-            }
+            sheet.getRangeByIndex(rowIdx, 2).setText(emp.name);
+            sheet.getRangeByIndex(rowIdx, 2).cellStyle = nameStyle;
+
+            sheet.getRangeByIndex(rowIdx, 3).setText(shift);
+            sheet.getRangeByIndex(rowIdx, 3).cellStyle = dataStyle;
+
+            sheet.getRangeByIndex(rowIdx, 4).setText(inTime);
+            sheet.getRangeByIndex(rowIdx, 4).cellStyle = dataStyle;
+
+            sheet.getRangeByIndex(rowIdx, 5).setText(outTime);
+            sheet.getRangeByIndex(rowIdx, 5).cellStyle = dataStyle;
+
+            // Keterangan
+            final xcel.Range statusCell = sheet.getRangeByIndex(rowIdx, 6);
+            statusCell.setText(status);
+            statusCell.cellStyle = rowStyle; // Style ngikutin kondisi (Merah/Oranye/Hitam)
+
+            rowIdx++;
           }
         }
-
-        cell.value = TextCellValue(text);
-        cell.cellStyle = CellStyle(
-          backgroundColorHex: bgColor,
-          fontColorHex: fontColor, // Merah kalau telat, Hitam kalau tepat
-          horizontalAlign: HorizontalAlign.Center,
-          verticalAlign: VerticalAlign.Center,
-          textWrapping: TextWrapping.WrapText,
-          fontSize: 10,
-          // Bold kalau telat biar makin kelihatan (Opsional, hapus baris ini kalau gak mau)
-          bold: fontColor == ExcelColor.red ? true : false, 
-        );
       }
-      rowIndex++;
     }
 
-    // LEGENDA WARNA (Footer)
-    int lRow = rowIndex + 2;
-    _writeLegend(sheet, lRow, "Shift Pagi (Kuning)", ExcelColor.fromHexString("#FFF59D"));
-    _writeLegend(sheet, lRow + 1, "Shift Siang (Hijau)", ExcelColor.fromHexString("#A5D6A7"));
-    _writeLegend(sheet, lRow + 2, "Shift Malam (Biru)", ExcelColor.fromHexString("#90CAF9"));
-    _writeLegend(sheet, lRow + 3, "Tidak Hadir (Merah Muda)", ExcelColor.fromHexString("#FFCDD2"));
-    _writeLegend(sheet, lRow + 4, "Libur (Abu-abu)", ExcelColor.fromHexString("#EEEEEE"));
-    
-    // Note Text Color
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: lRow + 5))
-      ..value = TextCellValue("Catatan: Jam warna MERAH artinya TERLAMBAT") // Update Catatan
-      ..cellStyle = CellStyle(fontColorHex: ExcelColor.red, bold: true);
-
-    await _saveAndOpenFile(excel, fileName);
+    // 🔥 FIX AUTO FIT (Dijejalin per kolom khusus di area tabel biar pasti melebar rapi)
+    if (rowIdx > 4) {
+      for (int c = 1; c <= 6; c++) {
+        sheet.getRangeByIndex(4, c, rowIdx - 1, c).autoFitColumns();
+      }
+    }
   }
 
-  void _writeLegend(Sheet sheet, int row, String label, ExcelColor color) {
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
-      ..value = TextCellValue("   ")
-      ..cellStyle = CellStyle(backgroundColorHex: color);
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
-      ..value = TextCellValue(label);
-  }
-
-  Future<void> _saveAndOpenFile(Excel excel, String fileName) async {
-    String filePath;
-    String safeName = fileName.replaceAll(RegExp(r'[^\w\s]+'), ''); 
+  Future<void> _saveAndOpenFile(xcel.Workbook workbook, String fileName) async {
+    String safeName = fileName.replaceAll(RegExp(r'[^\w\s\-\(\)\.]'), ''); 
+    if (!safeName.endsWith('.xlsx')) safeName += '.xlsx';
 
     Directory? directory;
     if (Platform.isAndroid) {
@@ -166,21 +201,18 @@ class ExcelService {
     } else {
       directory = await getApplicationDocumentsDirectory();
     }
-    
     directory ??= await getApplicationDocumentsDirectory();
     
-    filePath = "${directory.path}/$safeName.xlsx";
+    String filePath = "${directory.path}/$safeName";
+    final List<int> bytes = workbook.saveAsStream();
     File file = File(filePath);
-
     try {
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-      file.writeAsBytesSync(excel.save()!);
-      OpenFile.open(filePath);
+        if (!await directory.exists()) await directory.create(recursive: true);
+        await file.writeAsBytes(bytes, flush: true);
+        workbook.dispose();
+        OpenFile.open(filePath);
     } catch (e) {
-      print("Gagal save file: $e");
-      rethrow; 
+        print("Gagal save file: $e");
     }
   }
 }

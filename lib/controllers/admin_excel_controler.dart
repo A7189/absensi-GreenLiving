@@ -7,11 +7,10 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
 class ExcelController extends GetxController {
-  final DatabaseService _db = DatabaseService(); 
+  final DatabaseService _dbService = DatabaseService(); 
   final ExcelService _excelService = ExcelService(); 
 
   var isExporting = false.obs; 
-
   var startDate = DateTime(DateTime.now().year, DateTime.now().month, 1).obs;
   var endDate = DateTime.now().obs;
 
@@ -20,123 +19,145 @@ class ExcelController extends GetxController {
     endDate.value = end;
   }
 
-  void downloadReport() async {
-    try {
-      isExporting.value = true;
-      Get.dialog(
-        const Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20))), 
-        barrierDismissible: false
-      );
+  Future<void> downloadReport() async {
+    // Tampilkan Loading
+    isExporting.value = true;
+    Get.dialog(
+      const Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20))), 
+      barrierDismissible: false
+    );
 
+    try {
       DateTime start = startDate.value;
       DateTime end = endDate.value;
-      DateTime endFullDay = DateTime(end.year, end.month, end.day, 23, 59, 59);
-
       String startStr = DateFormat('yyyy-MM-dd').format(start);
       String endStr = DateFormat('yyyy-MM-dd').format(end);
-      String reportTitle = "Laporan_${DateFormat('dd MMM').format(start)}-${DateFormat('dd MMM yyyy').format(end)}";
+      
+      String fileName = "absensi green living (${DateFormat('dd-MM-yyyy').format(start)} - ${DateFormat('dd-MM-yyyy').format(end)})";
 
-      // 1. FETCH DATA
-      var futureEmployees = _db.getAllEmployees();
-      var futureSchedule = FirebaseFirestore.instance.collection('shift_schedule')
-          .where('date', isGreaterThanOrEqualTo: startStr)
-          .where('date', isLessThanOrEqualTo: endStr)
-          .get();
-      var futureAttendance = FirebaseFirestore.instance.collection('attendance_logs')
-          .where('date', isGreaterThanOrEqualTo: startStr)
-          .where('date', isLessThanOrEqualTo: endStr)
-          .get();
-
-      var results = await Future.wait([futureEmployees, futureSchedule, futureAttendance]);
+      // 1. FETCH DATA (Parallel)
+      var results = await Future.wait([
+        _dbService.getAllEmployees(),
+        _dbService.getShiftsByDateRange(startStr, endStr),
+        _dbService.getAttendanceByDateRange(startStr, endStr),
+        _dbService.getApprovedLeaves() // Pastikan service udah bener (pake 's')
+      ]);
 
       List<UserModel> employees = results[0] as List<UserModel>;
       QuerySnapshot scheduleSnap = results[1] as QuerySnapshot;
       QuerySnapshot attendanceSnap = results[2] as QuerySnapshot;
+      QuerySnapshot leaveSnap = results[3] as QuerySnapshot;
 
       // 2. MAPPING DATA
       Map<String, Map<String, dynamic>> finalMap = {};
 
-      // Init Slot Kosong
+      // Inisialisasi Map User
       for (var emp in employees) {
         finalMap[emp.uid] = {};
       }
 
-      // Masukin JADWAL Dulu (Sebagai Base Layer)
+      // A. JADWAL
       for (var doc in scheduleSnap.docs) {
         var data = doc.data() as Map<String, dynamic>;
         String uid = data['uid'];
         String date = data['date'];
-        
         if (finalMap.containsKey(uid)) {
           finalMap[uid]![date] = {
-            'type': 'schedule',
-            'value': data['shiftId'], // "pagi", "Siang", "Libur"
-            'shiftId': data['shiftId'] // Simpan buat cadangan
+            'type': 'schedule', 
+            'value': data['shiftId'], 
+            'shift': data['shiftId']
           };
         }
       }
 
-      // Masukin ABSENSI (Layer Atas)
+      // B. DATA IZIN (Logic Timezone Fix & Multi-day)
+      for (var doc in leaveSnap.docs) {
+        var data = doc.data() as Map<String, dynamic>;
+        String uid = data['uid'] ?? data['userId'];
+        
+        if (finalMap.containsKey(uid)) {
+          Timestamp? startTs = data['startDate'];
+          Timestamp? endTs = data['endDate'];
+
+          if (startTs != null && endTs != null) {
+            // Fix Timezone Indonesia
+            DateTime leaveStart = startTs.toDate().toLocal();
+            DateTime leaveEnd = endTs.toDate().toLocal();
+
+            // Reset Jam ke 00:00
+            leaveStart = DateTime(leaveStart.year, leaveStart.month, leaveStart.day);
+            leaveEnd = DateTime(leaveEnd.year, leaveEnd.month, leaveEnd.day);
+
+            int daysDiff = leaveEnd.difference(leaveStart).inDays;
+            if (daysDiff < 0) daysDiff = 0;
+
+            // Loop Durasi Izin
+            for (int i = 0; i <= daysDiff; i++) {
+               DateTime currentLeaveDate = leaveStart.add(Duration(days: i));
+               String dateKey = DateFormat('yyyy-MM-dd').format(currentLeaveDate);
+               
+               // Cek Range Laporan
+               if (dateKey.compareTo(startStr) >= 0 && dateKey.compareTo(endStr) <= 0) {
+                  finalMap[uid]![dateKey] = {
+                    'type': 'permission', 
+                    'value': data['type'] ?? 'Izin', 
+                    'reason': data['reason'] ?? '-'
+                  };
+               }
+            }
+          }
+        }
+      }
+
+      // C. ABSENSI (Menimpa Izin jika Hadir)
       for (var doc in attendanceSnap.docs) {
         var data = doc.data() as Map<String, dynamic>;
         String uid = data['uid'] ?? data['userId']; 
         String date = data['date'];
         
         if (finalMap.containsKey(uid)) {
-          // 🔥 LOGIC PENENTUAN SHIFT (Biar warnanya gak putih)
-          // Prioritas 1: Ambil dari log absen (shiftName/shiftId)
-          // Prioritas 2: Ambil dari data jadwal yang udah kita simpan di loop sebelumnya
-          String shiftFromLog = data['shiftName'] ?? data['shiftId'] ?? '';
+          String shiftName = data['shiftName'] ?? data['shiftId'] ?? '';
           
-          String shiftFromSchedule = "";
-          if (finalMap[uid]![date] != null && finalMap[uid]![date]!['shiftId'] != null) {
-             shiftFromSchedule = finalMap[uid]![date]!['shiftId'];
+          // Fallback shift name dari jadwal jika kosong
+          if (shiftName.isEmpty && finalMap[uid]![date] != null) {
+             if (finalMap[uid]![date]!['type'] != 'permission') {
+                shiftName = finalMap[uid]![date]!['shift'] ?? '';
+             }
           }
 
-          // Gabungkan: Kalau log kosong, pake jadwal
-          String finalShiftName = shiftFromLog.isNotEmpty ? shiftFromLog : shiftFromSchedule;
-
-          // Format Jam
           String checkIn = "-";
           if (data['checkInTime'] != null) {
             DateTime t = (data['checkInTime'] as Timestamp).toDate();
             checkIn = DateFormat('HH:mm').format(t);
           }
-          
-          String status = data['status'] ?? 'Hadir'; // "Terlambat" / "Hadir"
+          String checkOut = "-";
+          if (data['checkOutTime'] != null) {
+            DateTime t = (data['checkOutTime'] as Timestamp).toDate();
+            checkOut = DateFormat('HH:mm').format(t);
+          }
           
           finalMap[uid]![date] = {
-            'type': 'attendance',
-            'value': checkIn, 
-            'status': status, 
-            'shift': finalShiftName // 🔥 INI KUNCINYA BIAR WARNA MUNCUL
+            'type': 'attendance', 
+            'in': checkIn, 
+            'out': checkOut, 
+            'status': data['status'] ?? 'Hadir', 
+            'shift': shiftName
           };
         }
       }
 
+      // Tutup Loading
       if (Get.isDialogOpen ?? false) Get.back(); 
       
-      await _excelService.exportAttendanceMatrix(
-        reportTitle, 
-        employees, 
-        finalMap,
-        start,
-        endFullDay 
-      );
+      // Export Excel
+      await _excelService.exportAttendanceSplit(fileName, employees, finalMap, start, end);
 
-      Get.snackbar(
-        "Berhasil", 
-        "Laporan Absensi berhasil didownload! 📂",
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.TOP,
-        margin: const EdgeInsets.all(20)
-      );
+      Get.snackbar("Berhasil", "Laporan siap! 📂", backgroundColor: Colors.green, colorText: Colors.white);
 
     } catch (e) {
+      // Catch Minimalis (Cuma tutup loading & kasih notif biar user ga bingung)
       if (Get.isDialogOpen ?? false) Get.back();
-      Get.snackbar("Gagal", "$e", backgroundColor: Colors.red, colorText: Colors.white);
-      print("Excel Error: $e");
+      Get.snackbar("Gagal", "Terjadi kesalahan: $e", backgroundColor: Colors.red, colorText: Colors.white);
     } finally {
       isExporting.value = false;
     }

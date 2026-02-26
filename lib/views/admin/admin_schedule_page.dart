@@ -46,72 +46,87 @@ class AdminSchedulePage extends StatelessWidget {
                       borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
                       boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -5))]
                     ),
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        
-                        // LABEL PEGAWAI
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Align(
-                            alignment: Alignment.centerLeft, 
-                            child: Text("Pilih Personil:", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey))
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        
-                        // LIST PEGAWAI
-                        _buildEmployeeList(controller),
-                        
-                        const Divider(height: 40, thickness: 1, indent: 20, endIndent: 20),
-
-                        // 🔥 HEADER BULAN (NAVIGASI) & TOMBOL GENERATE
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20), // Padding disesuaikan biar panah muat
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    // 🔥 FITUR BARU: TARIK BUAT REFRESH PEGAWAI & JADWAL
+                    child: RefreshIndicator(
+                      onRefresh: () async {
+                        // Panggil fungsi reload data dari controller
+                       controller.fetchEmployees(); // 🔥 INIT: Refresh List Pegawai
+                        await controller.fetchUserShifts(); // 🔥 INIT: Refresh Jadwal User yg dipilih
+                      },
+                      color: const Color(0xFF1B5E20), 
+                      child: SingleChildScrollView( 
+                        physics: const AlwaysScrollableScrollPhysics(), 
+                        child: Container(
+                          height: MediaQuery.of(context).size.height * 0.8, // Hack biar GridView dapet height
+                          child: Column(
                             children: [
-                              // --- [MODIFIKASI] Navigasi Bulan ---
-                              Row(
-                                children: [
-                                  IconButton(
-                                    onPressed: () => controller.changeMonth(-1),
-                                    icon: const Icon(Icons.chevron_left, color: Colors.black87),
-                                    tooltip: "Bulan Lalu",
-                                  ),
-                                  InkWell(
-                                    onTap: () => _pickMonthDate(context, controller),
-                                    child: Obx(() => Text(
-                                      DateFormat('MMMM yyyy', 'id_ID').format(controller.currentMonth.value),
-                                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
-                                    )),
-                                  ),
-                                  IconButton(
-                                    onPressed: () => controller.changeMonth(1),
-                                    icon: const Icon(Icons.chevron_right, color: Colors.black87),
-                                    tooltip: "Bulan Depan",
-                                  ),
-                                ],
-                              ),
+                              const SizedBox(height: 20),
                               
-                              // Tombol Auto Pola
-                              ElevatedButton.icon(
-                                onPressed: () => _showGenerateDialog(context, controller),
-                                icon: const Icon(Icons.auto_fix_high, size: 18, color: Colors.white),
-                                label: Text("Auto Pola", style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF1B5E20),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+                              // LABEL PEGAWAI
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: Align(
+                                  alignment: Alignment.centerLeft, 
+                                  child: Text("Pilih Personil:", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey))
                                 ),
-                              )
+                              ),
+                              const SizedBox(height: 10),
+                              
+                              // LIST PEGAWAI
+                              _buildEmployeeList(controller),
+                              
+                              const Divider(height: 40, thickness: 1, indent: 20, endIndent: 20),
+
+                              // HEADER BULAN (NAVIGASI)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    // Navigasi Bulan (BALIK KE POSISI SEMULA)
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          onPressed: () => controller.changeMonth(-1),
+                                          icon: const Icon(Icons.chevron_left, color: Colors.black87),
+                                          tooltip: "Bulan Lalu",
+                                        ),
+                                        InkWell(
+                                          onTap: () => _pickMonthDate(context, controller),
+                                          child: Obx(() => Text(
+                                            DateFormat('MMMM yyyy', 'id_ID').format(controller.currentMonth.value),
+                                            style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
+                                          )),
+                                        ),
+                                        IconButton(
+                                          onPressed: () => controller.changeMonth(1),
+                                          icon: const Icon(Icons.chevron_right, color: Colors.black87),
+                                          tooltip: "Bulan Depan",
+                                        ),
+                                      ],
+                                    ),
+                                    
+                                    // Tombol Auto Pola
+                                    ElevatedButton.icon(
+                                      onPressed: () => _showGenerateDialog(context, controller),
+                                      icon: const Icon(Icons.auto_fix_high, size: 18, color: Colors.white),
+                                      label: Text("Auto Pola", style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF1B5E20),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+                                      ),
+                                    )
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+
+                              // GRID KALENDER (Pake Expanded di dalem Column yang udah di-wrap height)
+                              Expanded(child: _buildCalendarGrid(controller)),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 5),
-
-                        // GRID KALENDER
-                        Expanded(child: _buildCalendarGrid(controller)),
-                      ],
+                      ),
                     ),
                   ),
                 )
@@ -149,7 +164,7 @@ class AdminSchedulePage extends StatelessWidget {
   return Padding(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 15),
     child: Stack(
-      alignment: Alignment.center, // 🔥 Kunci: Semua anak default-nya di tengah
+      alignment: Alignment.center, 
       children: [
         const Text(
           "Manajer Jadwal",
@@ -261,14 +276,19 @@ class AdminSchedulePage extends StatelessWidget {
           String label = "Off";
           
           if (shiftId != null) {
-            if (shiftId == 'pagi') { 
+            // Cek Flexi/Sampah dulu biar ungu
+            if (shiftId.toLowerCase().contains('flexi') || shiftId.toLowerCase().contains('sampah')) {
+              color = Colors.purple[50]!; textColor = Colors.purple[900]!; label = "Flexi";
+            } else if (shiftId.toLowerCase().contains('pagi')) { 
               color = Colors.orange[50]!; textColor = Colors.orange[900]!; label = "Pagi";
-            } else if (shiftId == 'Siang') { 
+            } else if (shiftId.toLowerCase().contains('siang')) { 
               color = Colors.blue[50]!; textColor = Colors.blue[900]!; label = "Siang";
-            } else if (shiftId == 'Malam') { 
+            } else if (shiftId.toLowerCase().contains('malam')) { 
               color = const Color(0xFFE8F5E9); textColor = const Color(0xFF1B5E20); label = "Malam";
-            } else if (shiftId == 'Libur') {
+            } else if (shiftId.toLowerCase().contains('libur')) {
               color = Colors.red[50]!; textColor = Colors.red[900]!; label = "Libur";
+            } else {
+               color = Colors.teal[50]!; textColor = Colors.teal[900]!; label = shiftId;
             }
           }
 
@@ -286,7 +306,7 @@ class AdminSchedulePage extends StatelessWidget {
                 children: [
                   Text("${index + 1}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor)),
                   const SizedBox(height: 4),
-                  Text(label, style: TextStyle(fontSize: 10, color: textColor)),
+                  Text(label, style: TextStyle(fontSize: 10, color: textColor), textAlign: TextAlign.center, overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
@@ -296,7 +316,7 @@ class AdminSchedulePage extends StatelessWidget {
     });
   }
 
-  // --- DIALOG GENERATE (Auto Pola) ---
+  // --- DIALOG GENERATE (Auto Pola - Dinamis) ---
   void _showGenerateDialog(BuildContext context, AdminScheduleController controller) {
     Get.bottomSheet(
       Container(
@@ -313,16 +333,54 @@ class AdminSchedulePage extends StatelessWidget {
               const SizedBox(height: 20),
               
               Text("Generate Pola Otomatis", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
-              Text("Pilih jenis shift untuk MULAI. Tanggal akan dipilih setelah ini.", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
+              Text("Pilih jenis shift awal. Sistem akan otomatis menentukan pola.", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 20),
               
-              _buildStartOption(context, controller, "Mulai dari PAGI", "pagi", Colors.orange, Icons.wb_sunny),
+              // 1. OPSI SATPAM (Manual karena Logic Rotasi Khusus)
+              const Text("Pola Rotasi (Khusus Satpam)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
               const SizedBox(height: 10),
-              _buildStartOption(context, controller, "Mulai dari SIANG", "Siang", Colors.blue, Icons.cloud),
+              _buildStartOption(context, controller, "Mulai Rotasi dari PAGI", "Pagi", Colors.orange, Icons.wb_sunny),
+              const SizedBox(height: 5),
+              _buildStartOption(context, controller, "Mulai Rotasi dari SIANG", "Siang", Colors.blue, Icons.cloud),
+              const SizedBox(height: 5),
+              _buildStartOption(context, controller, "Mulai Rotasi dari MALAM", "Malam", const Color(0xFF1B5E20), Icons.nights_stay),
+              
+              const SizedBox(height: 20),
+
+              const Text("Pola Tetap (Tukang / Staff Lain)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
               const SizedBox(height: 10),
-              _buildStartOption(context, controller, "Mulai dari MALAM", "Malam", const Color(0xFF1B5E20), Icons.nights_stay),
+              
+
+              Obx(() {
+                 // Filter shift yg bukan satpam
+                 var otherShifts = controller.masterShifts.where((s) {
+                    String id = s['id'].toString();
+                    return !['Pagi', 'Siang', 'Malam'].contains(id);
+                 }).toList();
+                 
+                 if (otherShifts.isEmpty) return const Text("- Tidak ada shift lain -");
+
+                 return Column(
+                   children: otherShifts.map((shift) {
+                     String id = shift['id'];
+                     // Tentukan Icon & Warna biar cantik
+                     IconData icon = Icons.work;
+                     Color color = Colors.grey;
+                     
+                     if (id.toLowerCase().contains('sampah')) { icon = Icons.delete; color = Colors.brown; }
+                     else if (id.toLowerCase().contains('sapu')) { icon = Icons.cleaning_services; color = Colors.teal; }
+                     else if (id.toLowerCase().contains('taman')) { icon = Icons.park; color = Colors.green; }
+                     
+                     return Padding(
+                       padding: const EdgeInsets.only(bottom: 5),
+                       child: _buildStartOption(context, controller, "Shift Tetap: $id", id, color, icon),
+                     );
+                   }).toList(),
+                 );
+              }),
+
               const SizedBox(height: 10),
-              _buildStartOption(context, controller, "Mulai dari LIBUR", "Libur", Colors.red, Icons.weekend),
+              _buildStartOption(context, controller, "Set Full LIBUR", "Libur", Colors.red, Icons.weekend),
               const SizedBox(height: 30),
             ],
           ),
@@ -339,13 +397,11 @@ class AdminSchedulePage extends StatelessWidget {
     
     return InkWell(
       onTap: () async {
-        // 1. Tutup bottom sheet opsi
-        Get.back();
+        Get.back(); // Tutup bottom sheet
         
-        // 2. Munculkan DatePicker untuk konfirmasi tanggal mulai
         final DateTime? pickedDate = await showDatePicker(
           context: context,
-          initialDate: controller.currentMonth.value, // Default ke bulan yang sedang dilihat
+          initialDate: controller.currentMonth.value, 
           firstDate: DateTime(2020),
           lastDate: DateTime(2030),
           helpText: "PILIH TANGGAL MULAI POLA",
@@ -359,7 +415,6 @@ class AdminSchedulePage extends StatelessWidget {
           },
         );
 
-        // 3. Jika tanggal dipilih, Eksekusi
         if (pickedDate != null) {
           controller.executeGenerate(startShiftId: shiftId, startDate: pickedDate);
         }
@@ -371,7 +426,7 @@ class AdminSchedulePage extends StatelessWidget {
           Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color)),
           const SizedBox(width: 15), 
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold)), Text(timeInfo, style: const TextStyle(fontSize: 12, color: Colors.grey))])),
-          const Icon(Icons.calendar_month, size: 16, color: Colors.grey) // Ganti icon jadi kalender biar user tau ini bakal pick date
+          const Icon(Icons.calendar_month, size: 16, color: Colors.grey)
         ]),
       ),
     );
@@ -382,14 +437,52 @@ class AdminSchedulePage extends StatelessWidget {
     Get.bottomSheet(Container(
       padding: const EdgeInsets.all(20), 
       decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text("Edit ${DateFormat('dd MMM').format(date)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), 
-        const SizedBox(height: 15),
-        ListTile(title: const Text("Pagi"), onTap: (){controller.updateSingleShift(date, "pagi"); Get.back();}, leading: const Icon(Icons.wb_sunny, color: Colors.orange)),
-        ListTile(title: const Text("Siang"), onTap: (){controller.updateSingleShift(date, "Siang"); Get.back();}, leading: const Icon(Icons.cloud, color: Colors.blue)),
-        ListTile(title: const Text("Malam"), onTap: (){controller.updateSingleShift(date, "Malam"); Get.back();}, leading: const Icon(Icons.nights_stay, color: Color(0xFF1B5E20))),
-        ListTile(title: const Text("Libur"), onTap: (){controller.updateSingleShift(date, "Libur"); Get.back();}, leading: const Icon(Icons.weekend, color: Colors.grey)),
-      ])
+      child: SingleChildScrollView( // Biar gak overflow kalau list panjang
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text("Edit ${DateFormat('dd MMM').format(date)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), 
+          const SizedBox(height: 15),
+          
+          // Opsi Manual Standar
+          ListTile(title: const Text("Pagi"), onTap: (){controller.updateSingleShift(date, "Pagi"); Get.back();}, leading: const Icon(Icons.wb_sunny, color: Colors.orange)),
+          ListTile(title: const Text("Siang"), onTap: (){controller.updateSingleShift(date, "Siang"); Get.back();}, leading: const Icon(Icons.cloud, color: Colors.blue)),
+          ListTile(title: const Text("Malam"), onTap: (){controller.updateSingleShift(date, "Malam"); Get.back();}, leading: const Icon(Icons.nights_stay, color: Color(0xFF1B5E20))),
+          ListTile(title: const Text("Libur"), onTap: (){controller.updateSingleShift(date, "Libur"); Get.back();}, leading: const Icon(Icons.weekend, color: Colors.red)),
+
+          const Divider(),
+          const Text("Shift Lainnya", style: TextStyle(color: Colors.grey, fontSize: 12)),
+          
+      Obx(() {
+             var otherShifts = controller.masterShifts.where((s) {
+                String id = s['id'].toString();
+                // Filter biar Pagi/Siang/Malam gak dobel
+                return !['Pagi', 'Siang', 'Malam'].contains(id);
+             }).toList();
+
+             if (otherShifts.isEmpty) return const Padding(padding: EdgeInsets.all(10), child: Text("- Tidak ada shift lain -"));
+
+             return Column(
+               children: otherShifts.map((s) {
+                  String id = s['id'];
+                  
+                  // 🔥 LOGIC IKON & WARNA (Sama kayak Auto Pola)
+                  IconData icon = Icons.work;
+                  Color color = Colors.grey;
+                  
+                  if (id.toLowerCase().contains('sampah')) { icon = Icons.delete; color = Colors.brown; }
+                  else if (id.toLowerCase().contains('sapu')) { icon = Icons.cleaning_services; color = Colors.teal; }
+                  else if (id.toLowerCase().contains('taman')) { icon = Icons.park; color = Colors.green; }
+
+                  return ListTile(
+                    title: Text(id), 
+                    onTap: (){controller.updateSingleShift(date, id); Get.back();}, 
+                    leading: Icon(icon, color: color) // Pake ikon yang udah dipilih
+                  );
+               }).toList(),
+             );
+          })
+
+        ]),
+      )
     ));
   }
 
@@ -404,9 +497,10 @@ class AdminSchedulePage extends StatelessWidget {
           children: [
             const Text("Konfigurasi Master Shift", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 20),
-            _buildConfigItem(context, controller, "Shift Pagi", "pagi", Icons.wb_sunny, Colors.orange),
+            _buildConfigItem(context, controller, "Shift Pagi", "Pagi", Icons.wb_sunny, Colors.orange),
             _buildConfigItem(context, controller, "Shift Siang", "Siang", Icons.cloud, Colors.blue),
             _buildConfigItem(context, controller, "Shift Malam", "Malam", Icons.nights_stay, const Color(0xFF1B5E20)),
+            // Opsi Flexi jarang diedit tapi bisa ditampilin kalau mau
           ],
         ),
       )
@@ -420,8 +514,13 @@ class AdminSchedulePage extends StatelessWidget {
       trailing: const Icon(Icons.edit, size: 18, color: Colors.grey),
       onTap: () async {
         Get.back();
-        var data = await controller.getShiftDetail(id);
-        _showEditForm(context, controller, id, data);
+        // Disini harus fetch data dulu dari controller
+        try {
+          var data = await controller.getShiftDetail(id);
+          _showEditForm(context, controller, id, data);
+        } catch (e) {
+          Get.snackbar("Error", "Gagal ambil data shift");
+        }
       },
     );
   }
@@ -447,7 +546,10 @@ class AdminSchedulePage extends StatelessWidget {
       ),
       confirm: ElevatedButton(
         style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B5E20)),
-        onPressed: () => controller.updateMasterShift(id, startC.text, endC.text, tolC.text), 
+        onPressed: () {
+          controller.updateMasterShift(id, startC.text, endC.text, tolC.text);
+          Get.back();
+        }, 
         child: const Text("SIMPAN", style: TextStyle(color: Colors.white))
       ),
       cancel: TextButton(onPressed: () => Get.back(), child: const Text("Batal")),

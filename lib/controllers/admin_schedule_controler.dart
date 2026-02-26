@@ -18,7 +18,7 @@ class AdminScheduleController extends GetxController {
   var selectedUser = Rxn<UserModel>(); 
   var currentMonth = DateTime.now().obs;
 
-  // Cache Jadwal (Key: "2026-01-29", Value: "pagi")
+  // Cache Jadwal (Key: "2026-02-16", Value: "pagi")
   var userShifts = <String, String>{}.obs; 
   
   // Cache Master Shift
@@ -67,11 +67,11 @@ class AdminScheduleController extends GetxController {
     
     userShifts.clear(); 
     selectedUser.value = user; 
-    fetchShiftsForSelectedUser(); 
+    fetchUserShifts(); 
   }
 
-  // --- 4. TARIK JADWAL USER ---
-  Future<void> fetchShiftsForSelectedUser() async {
+  // --- 4. TARIK JADWAL USER (REFRESH) ---
+  Future<void> fetchUserShifts() async {
     if (selectedUser.value == null) return;
 
     try {
@@ -114,12 +114,12 @@ class AdminScheduleController extends GetxController {
   void changeMonth(int offset) {
     DateTime newDate = DateTime(currentMonth.value.year, currentMonth.value.month + offset);
     currentMonth.value = newDate;
-    fetchShiftsForSelectedUser(); 
+    fetchUserShifts(); 
   }
   
   void setSpecificMonth(DateTime date) {
     currentMonth.value = date;
-    fetchShiftsForSelectedUser();
+    fetchUserShifts();
   }
 
   // --- 5. UPDATE MANUAL SATUAN ---
@@ -129,14 +129,14 @@ class AdminScheduleController extends GetxController {
       String uid = selectedUser.value!.uid;
       String dateStr = DateFormat('yyyy-MM-dd').format(date);
       
-      // Update tampilan langsung (Optimistic)
+      // Optimistic Update
       userShifts[dateStr] = type;
       userShifts.refresh();
       
       DocumentReference docRef = _firestore.collection('shift_schedule').doc("$uid-$dateStr");
       
       if (type == 'Libur') {
-         await docRef.delete(); // Kalo libur hapus doc
+         await docRef.delete(); 
       } else {
          await docRef.set({
           'uid': uid, 
@@ -146,56 +146,58 @@ class AdminScheduleController extends GetxController {
         }, SetOptions(merge: true));
       }
 
-      // 🔥 [TAMBAHAN AUTO REFRESH] Ambil data terbaru dari DB biar sinkron
-      await fetchShiftsForSelectedUser();
+      await fetchUserShifts();
 
     } catch (e) { 
-      fetchShiftsForSelectedUser(); // Revert kalo gagal
+      print("Error update single: $e");
+      fetchUserShifts(); // Revert
     }
   }
 
-  // --- 6. GENERATE OTOMATIS (POLA BARU: MALAM-MALAM-SIANG-SIANG-PAGI-PAGI-LIBUR) ---
+  // --- 6. GENERATE OTOMATIS (SUPPORTS ALL SHIFTS) ---
   void executeGenerate({required String startShiftId, required DateTime startDate}) async {
     if (selectedUser.value == null) return;
+    
+    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
+    
     try {
-      Get.back(); 
-      Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
-      
       WriteBatch batch = _firestore.batch();
       String uid = selectedUser.value!.uid;
       
-      // 🔥 POLA BARU SESUAI REQUEST
-      // Urutan: Malam, Malam, Siang, Siang, Pagi, Pagi, Libur
-      // Total siklus: 7 Hari
-      List<String> pattern = ['Malam', 'Malam', 'Siang', 'Siang', 'pagi', 'pagi', 'Libur'];
-      
-      // Tentukan Start Index Berdasarkan Pilihan User
-      int startIndex = 0;
-      
-      // Kalau pilih "Mulai dari Malam", start index 0
-      if (startShiftId == 'Malam') startIndex = 0;
-      
-      // Kalau pilih "Mulai dari Siang", start index 2 (karena Malam-Malam-Siang...)
-      if (startShiftId == 'Siang') startIndex = 2;
-      
-      // Kalau pilih "Mulai dari Pagi", start index 4
-      if (startShiftId == 'pagi') startIndex = 4;
-      
-      // Kalau pilih "Mulai dari Libur", start index 6
-      if (startShiftId == 'Libur') startIndex = 6;
-      
-      int currentPatternIdx = startIndex;
+      List<String> pattern = [];
+      int currentPatternIdx = 0;
 
-      // Generate buat 30 Hari ke depan
-      int durationDays = 30; 
+      // --- LOGIC PEMBAGIAN POLA ---
+
+      // KELOMPOK 1: SATPAM (Rotasi 7 Hari)
+      if (['Pagi', 'Siang', 'Malam', 'Libur'].contains(startShiftId)) {
+          pattern = ['Malam', 'Malam', 'Siang', 'Siang', 'Pagi', 'Pagi', 'Libur'];
+          
+          if (startShiftId == 'Malam') currentPatternIdx = 0;
+          if (startShiftId == 'Siang') currentPatternIdx = 2;
+          if (startShiftId == 'Pagi') currentPatternIdx = 4;
+          if (startShiftId == 'Libur') currentPatternIdx = 6;
+      } 
+      
+      // KELOMPOK 2: NON-SATPAM (Tukang Sampah, Sapu, Taman - Flat)
+      else {
+          pattern = [startShiftId]; // Pola cuma 1 shift terus menerus
+          currentPatternIdx = 0;
+      }
+      
+      // Generate buat 31 Hari
+      int durationDays = 31; 
 
       for (int i = 0; i < durationDays; i++) {
         DateTime date = startDate.add(Duration(days: i));
         String dateStr = DateFormat('yyyy-MM-dd').format(date);
         
-        // Ambil Shift ID dari Pola (Looping pake Modulo)
         String shiftId = pattern[currentPatternIdx % pattern.length];
-        currentPatternIdx++;
+        
+        // Kalau Rotasi, index nambah. Kalau Flat, index tetep.
+        if (pattern.length > 1) {
+            currentPatternIdx++;
+        }
         
         DocumentReference docRef = _firestore.collection('shift_schedule').doc("$uid-$dateStr");
         
@@ -212,13 +214,10 @@ class AdminScheduleController extends GetxController {
       }
       
       await batch.commit(); 
+      if (Get.isDialogOpen ?? false) Get.back();
       
-      if (Get.isDialogOpen ?? false) Get.back(); // Tutup Loading
-      
-      // Refresh Grid
-      await fetchShiftsForSelectedUser(); 
-      
-      Get.snackbar("Sukses", "Pola (Malam-Siang-Pagi) berhasil dibuat!");
+      await fetchUserShifts(); 
+      Get.snackbar("Sukses", "Jadwal berhasil digenerate untuk $startShiftId!");
       
     } catch (e) { 
       if (Get.isDialogOpen ?? false) Get.back();

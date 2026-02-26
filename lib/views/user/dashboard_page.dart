@@ -163,8 +163,6 @@ class DashboardPage extends StatelessWidget {
                   email: firebaseUser.email ?? "no-email",
                   role: "security",
                   joinDate: DateTime.now(),
-                  officeLat: controller.officeLat.value, 
-                  officeLng: controller.officeLng.value, 
                 );
 
                 final db = DatabaseService();

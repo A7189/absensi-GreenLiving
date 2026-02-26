@@ -6,6 +6,7 @@ import 'package:absensi_greenliving/views/admin/admin_history_page.dart';
 import 'package:absensi_greenliving/views/admin/admin_leave_approval.dart';
 import 'package:absensi_greenliving/views/admin/admin_livemonitoring_page.dart';
 import 'package:absensi_greenliving/views/admin/admin_schedule_page.dart';
+import 'package:absensi_greenliving/views/auth/forgot_pass_page.dart';
 import 'package:absensi_greenliving/views/auth/login_page.dart';
 import 'package:absensi_greenliving/views/auth/register_page.dart';
 import 'package:absensi_greenliving/views/profile/profile_page.dart';
@@ -112,6 +113,11 @@ class AppPages {
       GetPage(
       name: Routes.ADMIN_EXCEL,
       page: () => const AdminExcelPage(),
+      transition: Transition.fadeIn,
+    ),
+      GetPage(
+      name: Routes.FORGOT_PASSWORD,
+      page: () => const ForgotPasswordPage(),
       transition: Transition.fadeIn,
     ),
   ];

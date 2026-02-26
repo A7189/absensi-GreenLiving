@@ -18,4 +18,5 @@ abstract class Routes {
   static const ADMIN_LIVE_MONITORING = '/admin_live_monitoring';
   static const ADD_LEAVE = '/add_leave';
   static const ADMIN_EXCEL = '/admin_excel';
+  static const FORGOT_PASSWORD = '/forgot_password';
 }

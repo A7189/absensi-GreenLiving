@@ -33,7 +33,6 @@ class AdminLiveMonitoringController extends GetxController {
       // 1. 🔥 LOAD CONFIG SHIFT DULU (PENTING!)
       var shiftsSnapshot = await _firestore.collection('shifts').get();
       for (var doc in shiftsSnapshot.docs) {
-        // Simpan config pake Key Lowercase biar gampang dicari (pagi, siang, malam)
         shiftConfigs[doc.id.toLowerCase()] = doc.data();
       }
 
@@ -83,7 +82,6 @@ class AdminLiveMonitoringController extends GetxController {
 
         // PRIORITAS 1: IKUT JADWAL DB
         if (shiftId.isNotEmpty && shiftConfigs.containsKey(shiftId.toLowerCase())) {
-          // Kalau jadwalnya "pagi", ambil config "pagi" dari DB
           String key = shiftId.toLowerCase();
           if (key.contains('pagi')) finalShift = 'Pagi';
           else if (key.contains('siang')) finalShift = 'Siang';
